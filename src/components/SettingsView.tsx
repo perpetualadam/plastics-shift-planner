@@ -1,13 +1,85 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
+import { paidHoursFromBreak } from "@/lib/pay";
 import {
   DEFAULT_SETTINGS,
   exportBackup,
   importBackup,
   type AppData,
 } from "@/lib/storage";
+
+/** Number input that allows clearing (no sticky zero). */
+function NumberField({
+  label,
+  value,
+  onCommit,
+  step = "any",
+  min,
+  max,
+  className,
+}: {
+  label: string;
+  value: number;
+  onCommit: (n: number) => void;
+  step?: string | number;
+  min?: number;
+  max?: number;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value));
+  }, [value]);
+
+  const commit = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === "" || trimmed === "-" || trimmed === ".") {
+      setDraft(String(value));
+      return;
+    }
+    let n = Number(trimmed);
+    if (!Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    if (typeof min === "number") n = Math.max(min, n);
+    if (typeof max === "number") n = Math.min(max, n);
+    onCommit(n);
+    setDraft(String(n));
+  };
+
+  return (
+    <label className={className}>
+      {label}
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === "" || /^-?\d*\.?\d*$/.test(next)) setDraft(next);
+        }}
+        onBlur={() => {
+          focused.current = false;
+          commit(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        step={step}
+      />
+    </label>
+  );
+}
 
 export function SettingsView() {
   const { data, setData, updateSettings } = useAppData();
@@ -22,6 +94,14 @@ export function SettingsView() {
     a.download = `plastics-b-shift-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const syncPaidFromBreak = (partial: Partial<typeof data.settings>) => {
+    const next = { ...data.settings, ...partial };
+    updateSettings({
+      ...partial,
+      paidHoursPerShift: paidHoursFromBreak(next),
+    });
   };
 
   return (
@@ -46,8 +126,17 @@ export function SettingsView() {
             />
           </label>
         </div>
+        <label className="grow block-field">
+          First paid shift (excludes induction)
+          <input
+            type="date"
+            value={data.settings.workStartDate || "2026-08-20"}
+            onChange={(e) => updateSettings({ workStartDate: e.target.value })}
+          />
+        </label>
         <p className="help">
-          Plastics B 2026 CSV rota · 12h shifts (06–18 / 18–06). Breaks configured below.
+          Rota still shows full CSV calendar. Pay / YTD only count from this date (default 20 Aug
+          2026 — first shift after induction).
         </p>
       </section>
 
@@ -56,38 +145,27 @@ export function SettingsView() {
           <h2>Pay rates</h2>
         </div>
         <div className="form-row wrap">
-          <label>
-            Hourly rate
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={data.settings.hourlyRate}
-              onChange={(e) => updateSettings({ hourlyRate: Number(e.target.value) || 0 })}
-            />
-          </label>
-          <label>
-            OT multiplier
-            <input
-              type="number"
-              step="0.1"
-              min="1"
-              value={data.settings.overtimeMultiplier}
-              onChange={(e) =>
-                updateSettings({ overtimeMultiplier: Number(e.target.value) || 1.5 })
-              }
-            />
-          </label>
-          <label>
-            Night premium /hr
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={data.settings.nightPremium}
-              onChange={(e) => updateSettings({ nightPremium: Number(e.target.value) || 0 })}
-            />
-          </label>
+          <NumberField
+            label="Hourly rate"
+            value={data.settings.hourlyRate}
+            min={0}
+            step="0.01"
+            onCommit={(hourlyRate) => updateSettings({ hourlyRate })}
+          />
+          <NumberField
+            label="OT multiplier"
+            value={data.settings.overtimeMultiplier}
+            min={1}
+            step="0.1"
+            onCommit={(overtimeMultiplier) => updateSettings({ overtimeMultiplier })}
+          />
+          <NumberField
+            label="Night premium /hr"
+            value={data.settings.nightPremium}
+            min={0}
+            step="0.01"
+            onCommit={(nightPremium) => updateSettings({ nightPremium })}
+          />
           <label>
             Currency
             <select
@@ -104,52 +182,64 @@ export function SettingsView() {
 
       <section className="panel">
         <div className="panel-head">
-          <h2>Breaks</h2>
+          <h2>Hours &amp; breaks</h2>
         </div>
         <p className="help">
-          12h clock shifts. Unpaid breaks reduce paid hours and wages; paid breaks keep the full
-          12h.
+          Edit clock hours and paid hours directly. Toggle paid/unpaid break to auto-suggest paid
+          hours from break length — you can still override.
         </p>
+        <div className="form-row wrap">
+          <NumberField
+            label="Clock hours / shift"
+            value={data.settings.shiftClockHours}
+            min={0.25}
+            max={24}
+            step="0.25"
+            onCommit={(shiftClockHours) => {
+              const paid = Math.min(data.settings.paidHoursPerShift, shiftClockHours);
+              updateSettings({ shiftClockHours, paidHoursPerShift: paid });
+            }}
+          />
+          <NumberField
+            label="Paid hours / shift"
+            value={data.settings.paidHoursPerShift}
+            min={0}
+            max={24}
+            step="0.25"
+            onCommit={(paidHoursPerShift) => {
+              const clock = data.settings.shiftClockHours || 12;
+              const paid = Math.min(paidHoursPerShift, clock);
+              const unpaidMins = Math.round((clock - paid) * 60);
+              updateSettings({
+                paidHoursPerShift: paid,
+                breakMinutes: data.settings.breakPaid ? data.settings.breakMinutes : unpaidMins,
+              });
+            }}
+          />
+          <NumberField
+            label="Break length (min)"
+            value={data.settings.breakMinutes}
+            min={0}
+            max={180}
+            step={5}
+            onCommit={(breakMinutes) => syncPaidFromBreak({ breakMinutes })}
+          />
+        </div>
         <label className="toggle">
           <input
             type="checkbox"
             checked={data.settings.breakPaid}
-            onChange={(e) => updateSettings({ breakPaid: e.target.checked })}
+            onChange={(e) => syncPaidFromBreak({ breakPaid: e.target.checked })}
           />
           <span>{data.settings.breakPaid ? "Break is paid" : "Break is unpaid"}</span>
         </label>
-        <div className="form-row wrap">
-          <label>
-            Break length (min)
-            <input
-              type="number"
-              min={0}
-              max={120}
-              step={5}
-              value={data.settings.breakMinutes}
-              onChange={(e) =>
-                updateSettings({
-                  breakMinutes: Math.max(0, Math.min(120, Number(e.target.value) || 0)),
-                })
-              }
-            />
-          </label>
-          <label>
-            Paid hours / shift
-            <input
-              type="text"
-              readOnly
-              value={`${(12 - (data.settings.breakPaid ? 0 : data.settings.breakMinutes / 60)).toFixed(2)} h`}
-            />
-          </label>
-        </div>
         <div className="chip-row">
           {[0, 20, 30, 45, 60].map((mins) => (
             <button
               key={mins}
               type="button"
               className={`chip ${data.settings.breakMinutes === mins ? "on" : ""}`}
-              onClick={() => updateSettings({ breakMinutes: mins })}
+              onClick={() => syncPaidFromBreak({ breakMinutes: mins })}
             >
               {mins === 0 ? "None" : `${mins}m`}
             </button>
@@ -221,7 +311,7 @@ export function SettingsView() {
         <h2>Plastics Shift</h2>
         <p>
           Personal B-shift planner — offline-first PWA. Schedule from your 2026 Plastics CSV rota
-          with editable wake times and paid/unpaid breaks.
+          with editable rates, hours, breaks, and first paid-shift date.
         </p>
         <p className="fineprint">v0.1 · data stays on your phone</p>
       </section>

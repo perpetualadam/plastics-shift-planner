@@ -1,6 +1,5 @@
 import {
   countWorkDaysInRange,
-  DAY_SHIFT_HOURS,
   parseDateKey,
   startOfLocalDay,
   toDateKey,
@@ -48,31 +47,84 @@ export function monthRange(year: number, month: number): { start: Date; end: Dat
   };
 }
 
+export function clockHoursPerShift(settings: AppSettings): number {
+  const h = Number(settings.shiftClockHours);
+  return Number.isFinite(h) && h > 0 ? h : 12;
+}
+
+/** Paid hours for one completed day or night shift (user-editable). */
+export function paidHoursPerShift(settings: AppSettings): number {
+  const clock = clockHoursPerShift(settings);
+  const paid = Number(settings.paidHoursPerShift);
+  if (!Number.isFinite(paid)) return Math.max(0, clock);
+  return Math.max(0, Math.min(clock, paid));
+}
+
 /** Unpaid break hours deducted from one shift (0 when breaks are paid). */
 export function unpaidBreakHoursPerShift(settings: AppSettings): number {
   if (settings.breakPaid) return 0;
-  const mins = Math.max(0, settings.breakMinutes || 0);
-  return Math.min(DAY_SHIFT_HOURS, mins / 60);
+  return Math.max(0, clockHoursPerShift(settings) - paidHoursPerShift(settings));
 }
 
-/** Paid hours for one completed day or night shift. */
-export function paidHoursPerShift(settings: AppSettings, clockHours = DAY_SHIFT_HOURS): number {
-  return Math.max(0, clockHours - unpaidBreakHoursPerShift(settings));
+/** Sync paid hours from break length when user toggles break settings. */
+export function paidHoursFromBreak(settings: Pick<AppSettings, "shiftClockHours" | "breakMinutes" | "breakPaid">): number {
+  const clock = clockHoursPerShift(settings as AppSettings);
+  if (settings.breakPaid) return clock;
+  const mins = Math.max(0, settings.breakMinutes || 0);
+  return Math.max(0, clock - mins / 60);
+}
+
+function clampRangeToWorkStart(
+  settings: AppSettings,
+  start: Date,
+  end: Date,
+): { start: Date; end: Date } | null {
+  const workStart = settings.workStartDate
+    ? startOfLocalDay(parseDateKey(settings.workStartDate))
+    : null;
+  let from = startOfLocalDay(start);
+  const to = startOfLocalDay(end);
+  if (workStart && workStart.getTime() > from.getTime()) from = workStart;
+  if (from.getTime() > to.getTime()) return null;
+  return { start: from, end: to };
 }
 
 export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdown {
   const { settings } = data;
-  const counts = countWorkDaysInRange(start, end);
+  const range = clampRangeToWorkStart(settings, start, end);
+  if (!range) {
+    return {
+      scheduledDays: 0,
+      scheduledNights: 0,
+      scheduledHours: 0,
+      paidHours: 0,
+      unpaidBreakHours: 0,
+      breakMinutes: settings.breakMinutes,
+      breakPaid: settings.breakPaid,
+      basePay: 0,
+      nightPremiumPay: 0,
+      overtimeHours: 0,
+      overtimePay: 0,
+      adjustments: 0,
+      total: 0,
+      effectiveHourly: 0,
+    };
+  }
+
+  const counts = countWorkDaysInRange(range.start, range.end);
   const shifts = counts.days + counts.nights;
-  const unpaidBreakHours = shifts * unpaidBreakHoursPerShift(settings);
-  const paidHours = Math.max(0, counts.hours - unpaidBreakHours);
-  const hoursPerShift = paidHoursPerShift(settings);
+  const clock = clockHoursPerShift(settings);
+  const paidPer = paidHoursPerShift(settings);
+  const unpaidPer = unpaidBreakHoursPerShift(settings);
+  const scheduledHours = shifts * clock;
+  const paidHours = shifts * paidPer;
+  const unpaidBreakHours = shifts * unpaidPer;
 
   const basePay = paidHours * settings.hourlyRate;
-  const nightPremiumPay = counts.nights * hoursPerShift * settings.nightPremium;
+  const nightPremiumPay = counts.nights * paidPer * settings.nightPremium;
 
-  const startKey = toDateKey(startOfLocalDay(start));
-  const endKey = toDateKey(startOfLocalDay(end));
+  const startKey = toDateKey(range.start);
+  const endKey = toDateKey(range.end);
 
   const ot = data.overtime.filter((o) => o.dateKey >= startKey && o.dateKey <= endKey);
   const overtimeHours = ot.reduce((sum, o) => sum + o.hours, 0);
@@ -93,7 +145,7 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
   return {
     scheduledDays: counts.days,
     scheduledNights: counts.nights,
-    scheduledHours: counts.hours,
+    scheduledHours,
     paidHours,
     unpaidBreakHours,
     breakMinutes: settings.breakMinutes,
@@ -120,6 +172,7 @@ export type WorkedDayRow = {
   paidHours: number;
   overtimeHours: number;
   note: string;
+  countsForPay: boolean;
 };
 
 export function workedDaysInMonth(
@@ -128,13 +181,17 @@ export function workedDaysInMonth(
   month: number,
 ): WorkedDayRow[] {
   const { start, end } = monthRange(year, month);
+  const workStartKey = data.settings.workStartDate || "";
   const rows: WorkedDayRow[] = [];
   const cursor = startOfLocalDay(start);
   const last = startOfLocalDay(end);
+  const clock = clockHoursPerShift(data.settings);
+  const paid = paidHoursPerShift(data.settings);
   while (cursor.getTime() <= last.getTime()) {
     const shift = getShiftForDate(cursor);
     if (shift.kind !== "off") {
       const key = toDateKey(cursor);
+      const countsForPay = !workStartKey || key >= workStartKey;
       const ot = data.overtime
         .filter((o) => o.dateKey === key)
         .reduce((s, o) => s + o.hours, 0);
@@ -142,10 +199,11 @@ export function workedDaysInMonth(
       rows.push({
         dateKey: key,
         kind: shift.kind,
-        scheduledHours: shift.hours,
-        paidHours: paidHoursPerShift(data.settings, shift.hours),
+        scheduledHours: clock,
+        paidHours: countsForPay ? paid : 0,
         overtimeHours: ot,
         note,
+        countsForPay,
       });
     }
     cursor.setDate(cursor.getDate() + 1);
@@ -167,7 +225,8 @@ export function yearToDatePay(data: AppData, asOf: Date = new Date()): PayBreakd
 }
 
 export function estimatedAnnual(data: AppData): number {
-  const workDays = ROTA_DATES.length;
+  const startKey = data.settings.workStartDate || "";
+  const workDays = ROTA_DATES.filter((d) => !startKey || d >= startKey).length;
   const hoursPer = paidHoursPerShift(data.settings);
   const base = workDays * hoursPer * data.settings.hourlyRate;
   const nightsShare = 0.5;
@@ -182,6 +241,8 @@ export function parseMonthKey(dateKey: string): { year: number; month: number } 
 
 export function breakLabel(settings: AppSettings): string {
   const mins = settings.breakMinutes || 0;
-  if (mins <= 0) return "No break";
-  return `${mins} min ${settings.breakPaid ? "paid" : "unpaid"} break`;
+  const paid = paidHoursPerShift(settings);
+  const clock = clockHoursPerShift(settings);
+  if (mins <= 0 && paid >= clock) return `No break · ${paid}h paid`;
+  return `${mins} min ${settings.breakPaid ? "paid" : "unpaid"} · ${paid}h paid / ${clock}h clock`;
 }

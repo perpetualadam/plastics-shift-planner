@@ -217,11 +217,16 @@ export function PayView() {
           {rows.map((r) => (
             <li key={r.dateKey} className={`kind-${r.kind}`}>
               <span>{r.dateKey}</span>
-              <span>{r.kind}</span>
               <span>
-                {r.paidHours === r.scheduledHours
-                  ? `${r.scheduledHours}h`
-                  : `${r.paidHours}h paid / ${r.scheduledHours}h`}
+                {r.kind}
+                {!r.countsForPay ? " · induction" : ""}
+              </span>
+              <span>
+                {!r.countsForPay
+                  ? "not paid"
+                  : r.paidHours === r.scheduledHours
+                    ? `${r.scheduledHours}h`
+                    : `${r.paidHours}h paid / ${r.scheduledHours}h`}
               </span>
               <span>{r.overtimeHours > 0 ? `+${r.overtimeHours} OT` : "—"}</span>
             </li>

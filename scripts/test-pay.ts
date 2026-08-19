@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import {
   calculateMonthPay,
   calculatePay,
+  comparePeriodPay,
   money,
   paidHoursFromBreak,
   paidHoursPerShift,
+  totalHours,
   unpaidBreakHoursPerShift,
+  weekRangeContaining,
 } from "../src/lib/pay";
 import {
   ATTENDANCE_BONUS_AMOUNT,
@@ -156,5 +159,72 @@ const otherMonth = calculateMonthPay(
 assert.equal(otherMonth.attendanceBonus, ATTENDANCE_BONUS_AMOUNT);
 
 assert.match(money(12.5, "GBP"), /£|GBP/);
+
+// Actual vs potential: after induction (18th) but before first rota day (20th)
+const asOf19 = new Date(2026, 7, 19);
+const monthCmp = comparePeriodPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+  },
+  "month",
+  new Date(2026, 7, 1),
+  asOf19,
+);
+assert.equal(monthCmp.actual.extraDays, 1);
+assert.equal(monthCmp.actual.paidHours, 9);
+assert.equal(monthCmp.actual.attendanceBonus, 0); // August not finished yet
+assert.equal(monthCmp.potential.extraDays, 1);
+assert.equal(monthCmp.potential.scheduledDays, 4);
+assert.equal(monthCmp.potential.scheduledNights, 3);
+assert.equal(monthCmp.potential.attendanceBonus, ATTENDANCE_BONUS_AMOUNT);
+assert.ok(monthCmp.potential.paidHours > monthCmp.actual.paidHours);
+assert.ok(monthCmp.remainingPaidHours > 0);
+assert.ok(monthCmp.remainingPay > 0);
+
+// After first day shift (20 Aug): actual includes induction + 20th
+const asOf20 = new Date(2026, 7, 20);
+const monthAfterFirst = comparePeriodPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+  },
+  "month",
+  new Date(2026, 7, 1),
+  asOf20,
+);
+assert.equal(monthAfterFirst.actual.scheduledDays, 1);
+assert.equal(monthAfterFirst.actual.extraDays, 1);
+assert.equal(monthAfterFirst.actual.paidHours, 11.5 + 9);
+
+// Week containing 20 Aug 2026 (Mon 17 – Sun 23)
+const week = weekRangeContaining(new Date(2026, 7, 20));
+assert.equal(week.start.getDay(), 1);
+assert.equal(week.end.getDay(), 0);
+const weekCmp = comparePeriodPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+  },
+  "week",
+  new Date(2026, 7, 20),
+  asOf20,
+);
+assert.equal(weekCmp.actual.scheduledDays, 1);
+assert.equal(weekCmp.potential.scheduledDays, 2); // 20 and 21 Aug days
+assert.ok(totalHours(weekCmp.potential) >= totalHours(weekCmp.actual));
+
+// Year potential includes attendance for months with no losses
+const yearCmp = comparePeriodPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+  },
+  "year",
+  new Date(2026, 0, 1),
+  asOf20,
+);
+assert.ok(yearCmp.potential.total > yearCmp.actual.total);
+assert.ok(yearCmp.potential.attendanceBonusMonths >= 1);
 
 console.log("pay tests passed");

@@ -62,6 +62,32 @@ export function monthRange(year: number, month: number): { start: Date; end: Dat
   };
 }
 
+/** Monday–Sunday week containing `date` (UK-style). */
+export function weekRangeContaining(date: Date): { start: Date; end: Date } {
+  const day = startOfLocalDay(date);
+  const mondayOffset = (day.getDay() + 6) % 7; // Mon=0
+  const start = new Date(day);
+  start.setDate(day.getDate() - mondayOffset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return { start, end };
+}
+
+export function yearRange(year: number): { start: Date; end: Date } {
+  return {
+    start: new Date(year, 0, 1),
+    end: new Date(year, 11, 31),
+  };
+}
+
+/** Earlier of two local calendar days. */
+export function minDate(a: Date, b: Date): Date {
+  const aa = startOfLocalDay(a);
+  const bb = startOfLocalDay(b);
+  return aa.getTime() <= bb.getTime() ? aa : bb;
+}
+
+
 export function clockHoursPerShift(settings: AppSettings): number {
   const h = Number(settings.shiftClockHours);
   return Number.isFinite(h) && h > 0 ? h : 12;
@@ -111,7 +137,12 @@ function extraWorkInRange(data: AppData, startKey: string, endKey: string): Extr
 }
 
 /** Sum £200 for each calendar month in [start, end] with no active loss reasons. */
-export function attendanceBonusInRange(data: AppData, start: Date, end: Date): {
+export function attendanceBonusInRange(
+  data: AppData,
+  start: Date,
+  end: Date,
+  opts?: { onlyCompletedMonths?: boolean; asOf?: Date },
+): {
   amount: number;
   months: number;
 } {
@@ -119,6 +150,7 @@ export function attendanceBonusInRange(data: AppData, start: Date, end: Date): {
   const to = startOfLocalDay(end);
   if (from.getTime() > to.getTime()) return { amount: 0, months: 0 };
 
+  const asOf = startOfLocalDay(opts?.asOf ?? new Date());
   let amount = 0;
   let months = 0;
   const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
@@ -127,6 +159,12 @@ export function attendanceBonusInRange(data: AppData, start: Date, end: Date): {
   while (cursor.getTime() <= lastMonth.getTime()) {
     const y = cursor.getFullYear();
     const m = cursor.getMonth();
+    const monthEnd = new Date(y, m + 1, 0);
+    const fullyElapsed = monthEnd.getTime() <= asOf.getTime();
+    if (opts?.onlyCompletedMonths && !fullyElapsed) {
+      cursor.setMonth(cursor.getMonth() + 1);
+      continue;
+    }
     if (!hasActiveAttendanceBonusLoss(data, y, m)) {
       amount += ATTENDANCE_BONUS_AMOUNT;
       months += 1;
@@ -137,7 +175,12 @@ export function attendanceBonusInRange(data: AppData, start: Date, end: Date): {
   return { amount, months };
 }
 
-export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdown {
+export function calculatePay(
+  data: AppData,
+  start: Date,
+  end: Date,
+  opts?: { onlyCompletedAttendanceMonths?: boolean; asOf?: Date },
+): PayBreakdown {
   const { settings } = data;
   const fullStartKey = toDateKey(startOfLocalDay(start));
   const fullEndKey = toDateKey(startOfLocalDay(end));
@@ -178,6 +221,9 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
     data,
     start,
     end,
+    opts?.onlyCompletedAttendanceMonths
+      ? { onlyCompletedMonths: true, asOf: opts.asOf }
+      : undefined,
   );
 
   const total = basePay + nightPremiumPay + overtimePay + adjustments + attendanceBonus;
@@ -202,6 +248,92 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
     attendanceBonusMonths,
     total,
     effectiveHourly,
+  };
+}
+
+export type PeriodKind = "week" | "month" | "year";
+
+export type PeriodComparison = {
+  kind: PeriodKind;
+  label: string;
+  start: Date;
+  end: Date;
+  asOf: Date;
+  /** Full scheduled period (rota + extras + OT + bonuses in range). */
+  potential: PayBreakdown;
+  /** Work completed through asOf (attendance bonus only for finished months). */
+  actual: PayBreakdown;
+  remainingPaidHours: number;
+  remainingPay: number;
+};
+
+export function totalHours(breakdown: PayBreakdown): number {
+  return breakdown.paidHours + breakdown.overtimeHours;
+}
+
+export function comparePeriodPay(
+  data: AppData,
+  kind: PeriodKind,
+  anchor: Date,
+  asOf: Date = new Date(),
+): PeriodComparison {
+  const today = startOfLocalDay(asOf);
+  let start: Date;
+  let end: Date;
+  let label: string;
+
+  if (kind === "week") {
+    ({ start, end } = weekRangeContaining(anchor));
+    label = `${start.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+  } else if (kind === "month") {
+    ({ start, end } = monthRange(anchor.getFullYear(), anchor.getMonth()));
+    label = start.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  } else {
+    ({ start, end } = yearRange(anchor.getFullYear()));
+    label = String(anchor.getFullYear());
+  }
+
+  const potential = calculatePay(data, start, end);
+
+  const emptyActual: PayBreakdown = {
+    scheduledDays: 0,
+    scheduledNights: 0,
+    extraDays: 0,
+    scheduledHours: 0,
+    paidHours: 0,
+    unpaidBreakHours: 0,
+    breakMinutes: data.settings.breakMinutes,
+    breakPaid: data.settings.breakPaid,
+    basePay: 0,
+    nightPremiumPay: 0,
+    overtimeHours: 0,
+    overtimePay: 0,
+    adjustments: 0,
+    attendanceBonus: 0,
+    attendanceBonusMonths: 0,
+    total: 0,
+    effectiveHourly: 0,
+  };
+
+  const periodStart = startOfLocalDay(start);
+  const actual: PayBreakdown =
+    periodStart.getTime() > today.getTime()
+      ? emptyActual
+      : calculatePay(data, start, minDate(end, today), {
+          onlyCompletedAttendanceMonths: true,
+          asOf: today,
+        });
+
+  return {
+    kind,
+    label,
+    start,
+    end,
+    asOf: today,
+    potential,
+    actual,
+    remainingPaidHours: Math.max(0, totalHours(potential) - totalHours(actual)),
+    remainingPay: Math.max(0, potential.total - actual.total),
   };
 }
 

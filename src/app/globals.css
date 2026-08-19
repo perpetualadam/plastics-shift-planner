@@ -635,6 +635,63 @@ textarea {
   font-size: 0.85rem;
 }
 
+.period-tabs {
+  margin-bottom: 12px;
+}
+
+.compare-table {
+  display: grid;
+  gap: 0;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.1fr;
+  gap: 8px;
+  padding: 10px 12px;
+  align-items: center;
+  font-size: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.compare-row:first-child {
+  border-top: none;
+}
+
+.compare-row.head {
+  background: color-mix(in srgb, var(--panel) 70%, var(--line));
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.compare-row.remaining {
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  font-weight: 600;
+}
+
+.compare-row .money,
+.compare-row span:last-child {
+  text-align: right;
+}
+
+.compare-stats {
+  margin-top: 4px;
+}
+
+.worked-list li.upcoming {
+  opacity: 0.55;
+}
+
+.worked-list li.done {
+  opacity: 1;
+}
+
 .ot-list li,
 .alert-list li {
   display: flex;

@@ -11,11 +11,12 @@ const baseData: AppData = {
   installedHintDismissed: false,
 };
 
-// Jan 2026: 17 work days × 12h @ £18.50
+// Jan 2026 from official CSV: 8 days + 7 nights = 15 × 12h @ £18.50
 const jan = calculateMonthPay(baseData, 2026, 0);
-assert.equal(jan.scheduledDays + jan.scheduledNights, 17);
-assert.equal(jan.scheduledHours, 17 * 12);
-assert.equal(jan.basePay, 17 * 12 * 18.5);
+assert.equal(jan.scheduledDays, 8);
+assert.equal(jan.scheduledNights, 7);
+assert.equal(jan.scheduledHours, 15 * 12);
+assert.equal(jan.basePay, 15 * 12 * 18.5);
 assert.equal(jan.nightPremiumPay, 0);
 assert.equal(jan.overtimePay, 0);
 assert.equal(jan.adjustments, 0);

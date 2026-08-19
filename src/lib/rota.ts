@@ -1,45 +1,30 @@
-/** Plastics B-Shift rota — 2 days / 2 nights / 3 off (7-day cycle) */
+/** Plastics B-Shift rota — sourced from official 2026 CSV schedule */
+
+import { ROTA_BY_DATE, type RotaEntry } from "./rotaData";
 
 export type ShiftKind = "day" | "night" | "off";
 
 export type ShiftDay = {
   date: Date;
   kind: ShiftKind;
-  /** Position within the 7-day cycle (0–6) */
+  /** Position within the legacy 7-day cycle label (kept for UI compatibility) */
   cycleDay: number;
   label: string;
   startHour: number | null;
   endHour: number | null;
   hours: number;
+  /** Exact HH:MM from CSV when this is a working day */
+  entry?: RotaEntry;
 };
 
-/**
- * Anchor: first Day shift of a cycle.
- * From Plastics 2026 rota (yellow B): Jan 3–4 days, Jan 5–6 nights, then 3 off.
- */
 export const CYCLE_ANCHOR = new Date(2026, 0, 3);
 export const CYCLE_LENGTH = 7;
 export const DAY_SHIFT_HOURS = 12;
 export const NIGHT_SHIFT_HOURS = 12;
 export const SHIFT_NAME = "B Shift";
 
-const CYCLE_PATTERN: ShiftKind[] = [
-  "day",
-  "day",
-  "night",
-  "night",
-  "off",
-  "off",
-  "off",
-];
-
 export function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function diffDays(a: Date, b: Date): number {
-  const ms = startOfLocalDay(a).getTime() - startOfLocalDay(b).getTime();
-  return Math.round(ms / (1000 * 60 * 60 * 24));
 }
 
 export function toDateKey(d: Date): string {
@@ -54,46 +39,61 @@ export function parseDateKey(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
+function parseHour(hhmm: string | undefined | null): number | null {
+  if (!hhmm) return null;
+  const [h] = hhmm.split(":").map(Number);
+  return Number.isFinite(h) ? h : null;
+}
+
+export function getRotaEntry(date: Date): RotaEntry | undefined {
+  return ROTA_BY_DATE[toDateKey(date)];
+}
+
+/** Legacy helper — CSV schedule is not a fixed 7-day cycle. */
 export function getCycleDay(date: Date): number {
-  const delta = diffDays(date, CYCLE_ANCHOR);
-  return ((delta % CYCLE_LENGTH) + CYCLE_LENGTH) % CYCLE_LENGTH;
+  const entry = getRotaEntry(date);
+  if (!entry) return 4;
+  return entry.kind === "day" ? 0 : 2;
 }
 
 export function getShiftForDate(date: Date): ShiftDay {
-  const cycleDay = getCycleDay(date);
-  const kind = CYCLE_PATTERN[cycleDay];
   const day = startOfLocalDay(date);
+  const entry = getRotaEntry(day);
 
-  if (kind === "day") {
+  if (!entry) {
     return {
       date: day,
-      kind,
-      cycleDay,
+      kind: "off",
+      cycleDay: 4,
+      label: "Off",
+      startHour: null,
+      endHour: null,
+      hours: 0,
+    };
+  }
+
+  if (entry.kind === "day") {
+    return {
+      date: day,
+      kind: "day",
+      cycleDay: 0,
       label: "Day shift",
-      startHour: 6,
-      endHour: 18,
+      startHour: parseHour(entry.start) ?? 6,
+      endHour: parseHour(entry.end) ?? 18,
       hours: DAY_SHIFT_HOURS,
+      entry,
     };
   }
-  if (kind === "night") {
-    return {
-      date: day,
-      kind,
-      cycleDay,
-      label: "Night shift",
-      startHour: 18,
-      endHour: 6,
-      hours: NIGHT_SHIFT_HOURS,
-    };
-  }
+
   return {
     date: day,
-    kind: "off",
-    cycleDay,
-    label: "Off",
-    startHour: null,
-    endHour: null,
-    hours: 0,
+    kind: "night",
+    cycleDay: 2,
+    label: "Night shift",
+    startHour: parseHour(entry.start) ?? 18,
+    endHour: parseHour(entry.end) ?? 6,
+    hours: NIGHT_SHIFT_HOURS,
+    entry,
   };
 }
 
@@ -107,7 +107,8 @@ export function getShiftStart(date: Date): Date | null {
   const shift = getShiftForDate(date);
   if (shift.kind === "off" || shift.startHour === null) return null;
   const start = startOfLocalDay(date);
-  start.setHours(shift.startHour, 0, 0, 0);
+  const [h, m] = (shift.entry?.start ?? `${shift.startHour}:00`).split(":").map(Number);
+  start.setHours(h, m || 0, 0, 0);
   return start;
 }
 
@@ -121,10 +122,42 @@ export function getShiftEnd(date: Date): Date | null {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 6, 0, 0, 0);
 }
 
+/** Earliest prep alarm from CSV (dog feed), else lead-minutes before start. */
 export function getWakeTime(date: Date, leadMinutes: number): Date | null {
+  const entry = getRotaEntry(date);
+  if (!entry) return null;
+
+  const wakeHhmm =
+    entry.kind === "day" ? entry.morningDogFeed : entry.afternoonDogFeed;
+
+  if (wakeHhmm) {
+    const [h, m] = wakeHhmm.split(":").map(Number);
+    const wake = startOfLocalDay(date);
+    wake.setHours(h, m, 0, 0);
+    return wake;
+  }
+
   const start = getShiftStart(date);
   if (!start) return null;
   return new Date(start.getTime() - leadMinutes * 60 * 1000);
+}
+
+export function getPrepTimes(date: Date): {
+  dogFeed: string | null;
+  getDressed: string | null;
+  leaveForWork: string | null;
+  targetArrival: string | null;
+  previousDayWarnings: string[];
+} | null {
+  const entry = getRotaEntry(date);
+  if (!entry) return null;
+  return {
+    dogFeed: entry.kind === "day" ? entry.morningDogFeed : entry.afternoonDogFeed,
+    getDressed: entry.getDressed,
+    leaveForWork: entry.leaveForWork,
+    targetArrival: entry.targetArrival,
+    previousDayWarnings: entry.previousDayWarnings,
+  };
 }
 
 export function getMonthShifts(year: number, month: number): ShiftDay[] {
@@ -201,9 +234,9 @@ export function countWorkDaysInRange(
 
 export function cycleLegend(): { kind: ShiftKind; days: number; label: string }[] {
   return [
-    { kind: "day", days: 2, label: "2 day shifts" },
-    { kind: "night", days: 2, label: "2 night shifts" },
-    { kind: "off", days: 3, label: "3 days off" },
+    { kind: "day", days: 2, label: "Day shifts (CSV)" },
+    { kind: "night", days: 2, label: "Night shifts (CSV)" },
+    { kind: "off", days: 3, label: "Off days" },
   ];
 }
 

@@ -19,7 +19,7 @@ export type AppSettings = {
   /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
   dayWakeTime: string;
   nightWakeTime: string;
-  /** First B-shift day that counts for pay (from CSV; default 2026-08-20). */
+  /** First B-shift rota day that counts for pay (CSV; default 2026-08-20). */
   workStartDate: string;
   /** Clock hours on site per shift (usually 12). */
   shiftClockHours: number;
@@ -155,11 +155,22 @@ export const CSV_DEFAULT_WAKE = {
   night: "16:49",
 } as const;
 
-/** No default extras — first paid day is CSV B-shift on workStartDate (2026-08-20). */
-export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [];
-
-/** Legacy seed from an earlier build; 18 Aug is not a B-shift CSV day. */
-const LEGACY_INDUCTION_ID = "induction-2026-08-18";
+/**
+ * Payable induction / training — Mon 18 Aug 2026, 09:00–18:00 (9h).
+ * Not on the B-shift CSV rota; first CSV shift is still Thu 20 Aug.
+ */
+export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [
+  {
+    id: "induction-2026-08-18",
+    dateKey: "2026-08-18",
+    label: "Induction / training",
+    start: "09:00",
+    end: "18:00",
+    clockHours: 9,
+    paidHours: 9,
+    note: "Induction and training 09:00–18:00",
+  },
+];
 
 function hoursBetween(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number);
@@ -214,9 +225,15 @@ function normalizeData(parsed: Partial<AppData>): AppData {
   const losses = (parsed.attendanceBonusLosses ?? [])
     .map((l) => normalizeLoss(l as Partial<AttendanceBonusLoss>))
     .filter((l): l is AttendanceBonusLoss => l !== null);
-  const extraWork = (parsed.extraWork ?? DEFAULT_EXTRA_WORK.map((e) => ({ ...e }))).filter(
-    (e) => e.id !== LEGACY_INDUCTION_ID,
-  );
+
+  const hasExtraKey = Object.prototype.hasOwnProperty.call(parsed, "extraWork");
+  const stored = parsed.extraWork ?? [];
+  // Fresh installs, or installs emptied by the mistaken wipe → seed induction extra day
+  const extraWork =
+    !hasExtraKey || stored.length === 0
+      ? DEFAULT_EXTRA_WORK.map((e) => ({ ...e }))
+      : stored;
+
   return {
     settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
     overtime: parsed.overtime ?? [],

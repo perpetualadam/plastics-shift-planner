@@ -12,7 +12,6 @@ import {
   DEFAULT_EXTRA_WORK,
   DEFAULT_SETTINGS,
   type AppData,
-  type ExtraWorkEntry,
 } from "../src/lib/storage";
 import { getShiftForDate } from "../src/lib/rota";
 import { ROTA_BY_DATE } from "../src/lib/rotaData";
@@ -28,9 +27,13 @@ const baseData: AppData = {
   installedHintDismissed: false,
 };
 
-// CSV: first B-shift day for this job is Thu 20 Aug 2026 (day). 18–19 Aug are off / not in CSV.
+// First CSV B-shift day is Thu 20 Aug; induction 18 Aug is a separate extra payable day
 assert.equal(DEFAULT_SETTINGS.workStartDate, "2026-08-20");
-assert.equal(DEFAULT_EXTRA_WORK.length, 0);
+assert.equal(DEFAULT_EXTRA_WORK.length, 1);
+assert.equal(DEFAULT_EXTRA_WORK[0].dateKey, "2026-08-18");
+assert.equal(DEFAULT_EXTRA_WORK[0].paidHours, 9);
+assert.equal(DEFAULT_EXTRA_WORK[0].start, "09:00");
+assert.equal(DEFAULT_EXTRA_WORK[0].end, "18:00");
 assert.equal(ROTA_BY_DATE["2026-08-18"], undefined);
 assert.equal(getShiftForDate(new Date(2026, 7, 19)).kind, "off");
 assert.equal(getShiftForDate(new Date(2026, 7, 20)).kind, "day");
@@ -51,7 +54,7 @@ assert.equal(
   11.5,
 );
 
-// Aug 2026 from CSV after first shift 20th: days 20,21,25,26 (4) + nights 29,30,31 (3) = 7
+// Aug 2026: rota from 20th = 4 days + 3 nights = 7 × 11.5 paid, plus induction 9h on 18th
 const unpaid = calculatePay(
   {
     ...baseData,
@@ -70,15 +73,15 @@ const unpaid = calculatePay(
 );
 assert.equal(unpaid.scheduledDays, 4);
 assert.equal(unpaid.scheduledNights, 3);
-assert.equal(unpaid.extraDays, 0);
-assert.equal(unpaid.scheduledHours, 7 * 12);
-assert.equal(unpaid.paidHours, 7 * 11.5);
-assert.equal(unpaid.basePay, 7 * 11.5 * 10);
+assert.equal(unpaid.extraDays, 1);
+assert.equal(unpaid.scheduledHours, 7 * 12 + 9);
+assert.equal(unpaid.paidHours, 7 * 11.5 + 9);
+assert.equal(unpaid.basePay, (7 * 11.5 + 9) * 10);
 assert.equal(unpaid.attendanceBonus, ATTENDANCE_BONUS_AMOUNT);
 assert.equal(unpaid.total, unpaid.basePay + ATTENDANCE_BONUS_AMOUNT);
 
-// Days before first shift do not pay (and no default induction)
-const beforeStart = calculatePay(
+// Induction alone in a week before rota start still pays
+const inductionOnly = calculatePay(
   {
     ...baseData,
     settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
@@ -86,33 +89,10 @@ const beforeStart = calculatePay(
   new Date(2026, 7, 17),
   new Date(2026, 7, 19),
 );
-assert.equal(beforeStart.extraDays, 0);
-assert.equal(beforeStart.paidHours, 0);
-assert.equal(beforeStart.basePay, 0);
-assert.equal(beforeStart.scheduledDays, 0);
-
-// Optional extra day still works when explicitly added
-const explicitExtra: ExtraWorkEntry = {
-  id: "extra-1",
-  dateKey: "2026-08-18",
-  label: "Training",
-  start: "09:00",
-  end: "18:00",
-  clockHours: 9,
-  paidHours: 9,
-};
-const withExtra = calculatePay(
-  {
-    ...baseData,
-    extraWork: [explicitExtra],
-    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
-  },
-  new Date(2026, 7, 17),
-  new Date(2026, 7, 19),
-);
-assert.equal(withExtra.extraDays, 1);
-assert.equal(withExtra.paidHours, 9);
-assert.equal(withExtra.basePay, 90);
+assert.equal(inductionOnly.extraDays, 1);
+assert.equal(inductionOnly.paidHours, 9);
+assert.equal(inductionOnly.basePay, 90);
+assert.equal(inductionOnly.scheduledDays, 0);
 
 // Active loss voids the monthly attendance bonus
 const withLoss = calculateMonthPay(

@@ -68,8 +68,12 @@ export function PayView() {
           <p className="stat-value">{pay.scheduledNights}</p>
         </div>
         <div>
+          <p className="stat-label">Extra days</p>
+          <p className="stat-value">{pay.extraDays}</p>
+        </div>
+        <div>
           <p className="stat-label">Clock hrs</p>
-          <p className="stat-value">{pay.scheduledHours}</p>
+          <p className="stat-value">{Number(pay.scheduledHours.toFixed(2))}</p>
         </div>
         <div>
           <p className="stat-label">Paid hrs</p>
@@ -215,11 +219,12 @@ export function PayView() {
         </div>
         <ul className="worked-list">
           {rows.map((r) => (
-            <li key={r.dateKey} className={`kind-${r.kind}`}>
+            <li key={`${r.kind}-${r.dateKey}-${r.label ?? ""}`} className={`kind-${r.kind}`}>
               <span>{r.dateKey}</span>
               <span>
-                {r.kind}
-                {!r.countsForPay ? " · induction" : ""}
+                {r.kind === "extra"
+                  ? r.label || "extra"
+                  : `${r.kind}${!r.countsForPay ? " · induction rota" : ""}`}
               </span>
               <span>
                 {!r.countsForPay
@@ -228,7 +233,13 @@ export function PayView() {
                     ? `${r.scheduledHours}h`
                     : `${r.paidHours}h paid / ${r.scheduledHours}h`}
               </span>
-              <span>{r.overtimeHours > 0 ? `+${r.overtimeHours} OT` : "—"}</span>
+              <span>
+                {r.kind === "extra" && r.note
+                  ? r.note
+                  : r.overtimeHours > 0
+                    ? `+${r.overtimeHours} OT`
+                    : "—"}
+              </span>
             </li>
           ))}
         </ul>

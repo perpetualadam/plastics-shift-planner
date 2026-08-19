@@ -6,6 +6,7 @@ import {
   saveData,
   type AppData,
   type AppSettings,
+  type ExtraWorkEntry,
   type OvertimeEntry,
   uid,
 } from "@/lib/storage";
@@ -33,7 +34,6 @@ export function useAppData() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const data = useMemo(() => {
     if (!raw) {
-      // Ensure defaults even when key missing
       return loadData();
     }
     try {
@@ -114,6 +114,26 @@ export function useAppData() {
     [setData],
   );
 
+  const upsertExtraWork = useCallback(
+    (entry: ExtraWorkEntry) => {
+      setData((prev) => {
+        const rest = (prev.extraWork ?? []).filter((e) => e.id !== entry.id);
+        return { ...prev, extraWork: [...rest, entry] };
+      });
+    },
+    [setData],
+  );
+
+  const removeExtraWork = useCallback(
+    (id: string) => {
+      setData((prev) => ({
+        ...prev,
+        extraWork: (prev.extraWork ?? []).filter((e) => e.id !== id),
+      }));
+    },
+    [setData],
+  );
+
   return {
     data,
     setData,
@@ -123,5 +143,7 @@ export function useAppData() {
     setDayNote,
     addAdjustment,
     removeAdjustment,
+    upsertExtraWork,
+    removeExtraWork,
   };
 }

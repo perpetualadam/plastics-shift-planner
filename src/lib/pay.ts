@@ -7,11 +7,20 @@ import {
   type ShiftKind,
 } from "./rota";
 import { ROTA_DATES } from "./rotaData";
-import type { AppData, AppSettings, OvertimeEntry, PayAdjustment } from "./storage";
+import {
+  extraWorkClockHours,
+  extraWorkPaidHours,
+  type AppData,
+  type AppSettings,
+  type ExtraWorkEntry,
+  type OvertimeEntry,
+  type PayAdjustment,
+} from "./storage";
 
 export type PayBreakdown = {
   scheduledDays: number;
   scheduledNights: number;
+  extraDays: number;
   /** Clock hours on site (includes unpaid break time). */
   scheduledHours: number;
   /** Hours that attract base pay after break rules. */
@@ -67,7 +76,9 @@ export function unpaidBreakHoursPerShift(settings: AppSettings): number {
 }
 
 /** Sync paid hours from break length when user toggles break settings. */
-export function paidHoursFromBreak(settings: Pick<AppSettings, "shiftClockHours" | "breakMinutes" | "breakPaid">): number {
+export function paidHoursFromBreak(
+  settings: Pick<AppSettings, "shiftClockHours" | "breakMinutes" | "breakPaid">,
+): number {
   const clock = clockHoursPerShift(settings as AppSettings);
   if (settings.breakPaid) return clock;
   const mins = Math.max(0, settings.breakMinutes || 0);
@@ -89,44 +100,36 @@ function clampRangeToWorkStart(
   return { start: from, end: to };
 }
 
+function extraWorkInRange(data: AppData, startKey: string, endKey: string): ExtraWorkEntry[] {
+  return (data.extraWork ?? []).filter((e) => e.dateKey >= startKey && e.dateKey <= endKey);
+}
+
 export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdown {
   const { settings } = data;
-  const range = clampRangeToWorkStart(settings, start, end);
-  if (!range) {
-    return {
-      scheduledDays: 0,
-      scheduledNights: 0,
-      scheduledHours: 0,
-      paidHours: 0,
-      unpaidBreakHours: 0,
-      breakMinutes: settings.breakMinutes,
-      breakPaid: settings.breakPaid,
-      basePay: 0,
-      nightPremiumPay: 0,
-      overtimeHours: 0,
-      overtimePay: 0,
-      adjustments: 0,
-      total: 0,
-      effectiveHourly: 0,
-    };
-  }
+  const fullStartKey = toDateKey(startOfLocalDay(start));
+  const fullEndKey = toDateKey(startOfLocalDay(end));
+  const extras = extraWorkInRange(data, fullStartKey, fullEndKey);
+  const extraClock = extras.reduce((s, e) => s + extraWorkClockHours(e), 0);
+  const extraPaid = extras.reduce((s, e) => s + extraWorkPaidHours(e), 0);
 
-  const counts = countWorkDaysInRange(range.start, range.end);
+  const range = clampRangeToWorkStart(settings, start, end);
+  const counts = range
+    ? countWorkDaysInRange(range.start, range.end)
+    : { days: 0, nights: 0, off: 0, hours: 0 };
+
   const shifts = counts.days + counts.nights;
   const clock = clockHoursPerShift(settings);
   const paidPer = paidHoursPerShift(settings);
   const unpaidPer = unpaidBreakHoursPerShift(settings);
-  const scheduledHours = shifts * clock;
-  const paidHours = shifts * paidPer;
-  const unpaidBreakHours = shifts * unpaidPer;
+
+  const scheduledHours = shifts * clock + extraClock;
+  const paidHours = shifts * paidPer + extraPaid;
+  const unpaidBreakHours = shifts * unpaidPer + Math.max(0, extraClock - extraPaid);
 
   const basePay = paidHours * settings.hourlyRate;
   const nightPremiumPay = counts.nights * paidPer * settings.nightPremium;
 
-  const startKey = toDateKey(range.start);
-  const endKey = toDateKey(range.end);
-
-  const ot = data.overtime.filter((o) => o.dateKey >= startKey && o.dateKey <= endKey);
+  const ot = data.overtime.filter((o) => o.dateKey >= fullStartKey && o.dateKey <= fullEndKey);
   const overtimeHours = ot.reduce((sum, o) => sum + o.hours, 0);
   const overtimePay = ot.reduce((sum, o) => {
     const rate = o.rateOverride ?? settings.hourlyRate * settings.overtimeMultiplier;
@@ -134,7 +137,7 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
   }, 0);
 
   const adjustmentsList = data.adjustments.filter(
-    (a) => a.dateKey >= startKey && a.dateKey <= endKey,
+    (a) => a.dateKey >= fullStartKey && a.dateKey <= fullEndKey,
   );
   const adjustments = adjustmentsList.reduce((sum, a) => sum + a.amount, 0);
 
@@ -145,6 +148,7 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
   return {
     scheduledDays: counts.days,
     scheduledNights: counts.nights,
+    extraDays: extras.length,
     scheduledHours,
     paidHours,
     unpaidBreakHours,
@@ -167,7 +171,8 @@ export function calculateMonthPay(data: AppData, year: number, month: number): P
 
 export type WorkedDayRow = {
   dateKey: string;
-  kind: ShiftKind;
+  kind: ShiftKind | "extra";
+  label?: string;
   scheduledHours: number;
   paidHours: number;
   overtimeHours: number;
@@ -187,6 +192,9 @@ export function workedDaysInMonth(
   const last = startOfLocalDay(end);
   const clock = clockHoursPerShift(data.settings);
   const paid = paidHoursPerShift(data.settings);
+  const startKey = toDateKey(start);
+  const endKey = toDateKey(end);
+
   while (cursor.getTime() <= last.getTime()) {
     const shift = getShiftForDate(cursor);
     if (shift.kind !== "off") {
@@ -208,7 +216,24 @@ export function workedDaysInMonth(
     }
     cursor.setDate(cursor.getDate() + 1);
   }
-  return rows;
+
+  for (const extra of extraWorkInRange(data, startKey, endKey)) {
+    const ot = data.overtime
+      .filter((o) => o.dateKey === extra.dateKey)
+      .reduce((s, o) => s + o.hours, 0);
+    rows.push({
+      dateKey: extra.dateKey,
+      kind: "extra",
+      label: extra.label,
+      scheduledHours: extraWorkClockHours(extra),
+      paidHours: extraWorkPaidHours(extra),
+      overtimeHours: ot,
+      note: extra.note ?? `${extra.start}–${extra.end}`,
+      countsForPay: true,
+    });
+  }
+
+  return rows.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 }
 
 export function sumOvertimeHours(entries: OvertimeEntry[]): number {
@@ -228,7 +253,8 @@ export function estimatedAnnual(data: AppData): number {
   const startKey = data.settings.workStartDate || "";
   const workDays = ROTA_DATES.filter((d) => !startKey || d >= startKey).length;
   const hoursPer = paidHoursPerShift(data.settings);
-  const base = workDays * hoursPer * data.settings.hourlyRate;
+  const extraPaid = (data.extraWork ?? []).reduce((s, e) => s + extraWorkPaidHours(e), 0);
+  const base = (workDays * hoursPer + extraPaid) * data.settings.hourlyRate;
   const nightsShare = 0.5;
   const nightPrem = workDays * nightsShare * hoursPer * data.settings.nightPremium;
   return base + nightPrem;

@@ -59,11 +59,25 @@ export type PayAdjustment = {
   amount: number;
 };
 
+export type ExtraWorkEntry = {
+  id: string;
+  dateKey: string;
+  label: string;
+  start: string; // HH:MM
+  end: string; // HH:MM
+  /** Clock hours on site; if omitted, derived from start/end. */
+  clockHours?: number;
+  /** Paid hours; defaults to clock hours (fully payable). */
+  paidHours?: number;
+  note?: string;
+};
+
 export type AppData = {
   settings: AppSettings;
   overtime: OvertimeEntry[];
   notes: DayNote[];
   adjustments: PayAdjustment[];
+  extraWork: ExtraWorkEntry[];
   notificationPermissionAsked: boolean;
   installedHintDismissed: boolean;
 };
@@ -97,49 +111,82 @@ export const CSV_DEFAULT_WAKE = {
   night: "16:49",
 } as const;
 
+/** Default payable induction — 18 Aug 2026, 09:00–18:00 (9h). */
+export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [
+  {
+    id: "induction-2026-08-18",
+    dateKey: "2026-08-18",
+    label: "Induction",
+    start: "09:00",
+    end: "18:00",
+    clockHours: 9,
+    paidHours: 9,
+    note: "Payable induction day",
+  },
+];
+
+function hoursBetween(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if (![sh, sm, eh, em].every(Number.isFinite)) return 0;
+  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+}
+
+export function extraWorkClockHours(entry: ExtraWorkEntry): number {
+  if (typeof entry.clockHours === "number" && Number.isFinite(entry.clockHours)) {
+    return Math.max(0, entry.clockHours);
+  }
+  return hoursBetween(entry.start, entry.end);
+}
+
+export function extraWorkPaidHours(entry: ExtraWorkEntry): number {
+  if (typeof entry.paidHours === "number" && Number.isFinite(entry.paidHours)) {
+    return Math.max(0, entry.paidHours);
+  }
+  return extraWorkClockHours(entry);
+}
+
+function emptyData(): AppData {
+  return {
+    settings: DEFAULT_SETTINGS,
+    overtime: [],
+    notes: [],
+    adjustments: [],
+    extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+    notificationPermissionAsked: false,
+    installedHintDismissed: false,
+  };
+}
+
+function normalizeData(parsed: Partial<AppData>): AppData {
+  const hasExtraKey = Object.prototype.hasOwnProperty.call(parsed, "extraWork");
+  return {
+    settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
+    overtime: parsed.overtime ?? [],
+    notes: parsed.notes ?? [],
+    adjustments: parsed.adjustments ?? [],
+    // Seed induction only when older installs never had this field
+    extraWork: hasExtraKey
+      ? (parsed.extraWork ?? [])
+      : DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+    notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
+    installedHintDismissed: parsed.installedHintDismissed ?? false,
+  };
+}
+
 const STORAGE_KEY = "plastics-b-shift-planner-v1";
 
 export function loadData(): AppData {
   if (typeof window === "undefined") {
-    return {
-      settings: DEFAULT_SETTINGS,
-      overtime: [],
-      notes: [],
-      adjustments: [],
-      notificationPermissionAsked: false,
-      installedHintDismissed: false,
-    };
+    return emptyData();
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return {
-        settings: DEFAULT_SETTINGS,
-        overtime: [],
-        notes: [],
-        adjustments: [],
-        notificationPermissionAsked: false,
-        installedHintDismissed: false,
-      };
-    }
+    if (!raw) return emptyData();
     const parsed = JSON.parse(raw) as Partial<AppData>;
-    return {
-      settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
-      overtime: parsed.overtime ?? [],
-      notes: parsed.notes ?? [],
-      adjustments: parsed.adjustments ?? [],
-      notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
-      installedHintDismissed: parsed.installedHintDismissed ?? false,
-    };
+    return normalizeData(parsed);
   } catch {
-    return {
-      settings: DEFAULT_SETTINGS,
-      overtime: [],
-      notes: [],
-      adjustments: [],
-      notificationPermissionAsked: false,
-      installedHintDismissed: false,
-    };
+    return emptyData();
   }
 }
 
@@ -181,12 +228,5 @@ export function exportBackup(data: AppData): string {
 export function importBackup(json: string): AppData {
   const parsed = JSON.parse(json) as { data?: AppData } | AppData;
   const data = "data" in parsed && parsed.data ? parsed.data : (parsed as AppData);
-  return {
-    settings: { ...DEFAULT_SETTINGS, ...data.settings },
-    overtime: data.overtime ?? [],
-    notes: data.notes ?? [],
-    adjustments: data.adjustments ?? [],
-    notificationPermissionAsked: data.notificationPermissionAsked ?? false,
-    installedHintDismissed: data.installedHintDismissed ?? false,
-  };
+  return normalizeData(data);
 }

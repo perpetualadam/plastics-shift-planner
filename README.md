@@ -1,18 +1,21 @@
 # Plastics Shift — B Shift Planner
 
-Personal offline-first PWA for **Plastics B Shift** (yellow boxes on the 2026 rota).
+Personal offline-first PWA for **Plastics B Shift** (2026 rota).
 
-## Pattern
+## Schedule source
 
-- **2 day shifts** · 06:00–18:00  
-- **2 night shifts** · 18:00–06:00  
-- **3 days off**  
-- Anchored to the printed 2026 Plastics rota (first day block: **3–4 Jan 2026**)
+Working days and prep times come from the official CSV:
+
+`data/b-shift-2026.csv` (also at `/data/b-shift-2026.csv` when deployed)
+
+- **Day** · 06:00–18:00 · wake/prep from morning dog feed (04:49)  
+- **Night** · 18:00–06:00 · wake/prep from afternoon dog feed (16:49)  
+- Day-before warnings default **17:00** and **20:00**
 
 ## Features
 
-- Today view with countdown and wake time  
-- Full month rota calendar  
+- Today view with countdown and CSV prep times  
+- Full month rota calendar (CSV dates)  
 - Day-before reminders (default **17:00** and **20:00**)  
 - Wake alarms with 6 built-in sounds  
 - Overtime logging, pay estimates, YTD, days worked  

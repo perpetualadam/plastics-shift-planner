@@ -59,6 +59,10 @@ export function AlarmsView() {
         <div className="panel-head">
           <h2>Wake alarms</h2>
         </div>
+        <p className="help">
+          Wake times follow the CSV (day 04:49 / night 16:49). Lead minutes below are only a
+          fallback if a date has no prep time.
+        </p>
         <label className="toggle">
           <input
             type="checkbox"

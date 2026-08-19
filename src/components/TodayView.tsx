@@ -5,6 +5,7 @@ import {
   formatLongDate,
   formatShiftTime,
   formatShortDate,
+  getPrepTimes,
   getShiftForDate,
   getUpcomingShifts,
   getWakeTime,
@@ -101,8 +102,23 @@ export function TodayView() {
           <p className="hero-wake">
             Wake alarm ·{" "}
             {wake.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            {wakeTarget && !isSameDay(wakeTarget.date, now) && (
+              <span> for {formatShortDate(wakeTarget.date)}</span>
+            )}
           </p>
         )}
+        {(() => {
+          const prep = wakeTarget ? getPrepTimes(wakeTarget.date) : null;
+          if (!prep) return null;
+          return (
+            <ul className="prep-list">
+              {prep.dogFeed && <li>Dog feed {prep.dogFeed}</li>}
+              {prep.getDressed && <li>Get dressed {prep.getDressed}</li>}
+              {prep.leaveForWork && <li>Leave {prep.leaveForWork}</li>}
+              {prep.targetArrival && <li>Arrive {prep.targetArrival}</li>}
+            </ul>
+          );
+        })()}
       </section>
 
       <section className="panel stats-row">

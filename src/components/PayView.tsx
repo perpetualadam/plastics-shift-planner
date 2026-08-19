@@ -357,7 +357,7 @@ export function PayView() {
               <span>
                 {r.kind === "extra"
                   ? r.label || "extra"
-                  : `${r.kind}${!r.countsForPay ? " · induction rota" : ""}`}
+                  : `${r.kind}${!r.countsForPay ? " · before start date" : ""}`}
               </span>
               <span>
                 {!r.countsForPay

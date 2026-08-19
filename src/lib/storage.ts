@@ -16,6 +16,9 @@ export type AppSettings = {
   wakeLeadMinutes: number;
   dayWakeLeadMinutes: number;
   nightWakeLeadMinutes: number;
+  /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
+  dayWakeTime: string;
+  nightWakeTime: string;
   alarmSound: AlarmSoundId;
   alarmVolume: number;
   remindersEnabled: boolean;
@@ -60,9 +63,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overtimeMultiplier: 1.5,
   nightPremium: 0,
   currency: "GBP",
-  wakeLeadMinutes: 90,
-  dayWakeLeadMinutes: 90,
-  nightWakeLeadMinutes: 90,
+  wakeLeadMinutes: 71,
+  dayWakeLeadMinutes: 71,
+  nightWakeLeadMinutes: 71,
+  dayWakeTime: "04:49",
+  nightWakeTime: "16:49",
   alarmSound: "pulse",
   alarmVolume: 0.85,
   remindersEnabled: true,
@@ -71,6 +76,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shiftName: "B Shift",
   plantName: "Plastics",
 };
+
+export const CSV_DEFAULT_WAKE = {
+  day: "04:49",
+  night: "16:49",
+} as const;
 
 const STORAGE_KEY = "plastics-b-shift-planner-v1";
 

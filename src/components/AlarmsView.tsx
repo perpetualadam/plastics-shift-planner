@@ -8,7 +8,7 @@ import {
   nextEventSummary,
 } from "@/lib/notifications";
 import { SOUND_OPTIONS, playAlarmSound } from "@/lib/sounds";
-import type { AlarmSoundId } from "@/lib/storage";
+import { CSV_DEFAULT_WAKE, type AlarmSoundId } from "@/lib/storage";
 
 export function AlarmsView() {
   const { data, updateSettings } = useAppData();
@@ -60,8 +60,7 @@ export function AlarmsView() {
           <h2>Wake alarms</h2>
         </div>
         <p className="help">
-          Wake times follow the CSV (day 04:49 / night 16:49). Lead minutes below are only a
-          fallback if a date has no prep time.
+          Set your own wake times for day and night shifts. Defaults match the CSV (04:49 / 16:49).
         </p>
         <label className="toggle">
           <input
@@ -73,34 +72,57 @@ export function AlarmsView() {
         </label>
         <div className="form-row wrap">
           <label>
-            Day shift lead (min)
+            Day shift wake
             <input
-              type="number"
-              min={15}
-              step={15}
-              value={data.settings.dayWakeLeadMinutes}
-              onChange={(e) => updateSettings({ dayWakeLeadMinutes: Number(e.target.value) || 90 })}
+              type="time"
+              value={data.settings.dayWakeTime || "04:49"}
+              onChange={(e) => {
+                const dayWakeTime = e.target.value || "04:49";
+                const [h, m] = dayWakeTime.split(":").map(Number);
+                const lead = 6 * 60 - (h * 60 + m);
+                updateSettings({
+                  dayWakeTime,
+                  dayWakeLeadMinutes: lead > 0 ? lead : data.settings.dayWakeLeadMinutes,
+                });
+              }}
             />
           </label>
           <label>
-            Night shift lead (min)
+            Night shift wake
             <input
-              type="number"
-              min={15}
-              step={15}
-              value={data.settings.nightWakeLeadMinutes}
-              onChange={(e) =>
-                updateSettings({ nightWakeLeadMinutes: Number(e.target.value) || 90 })
-              }
+              type="time"
+              value={data.settings.nightWakeTime || "16:49"}
+              onChange={(e) => {
+                const nightWakeTime = e.target.value || "16:49";
+                const [h, m] = nightWakeTime.split(":").map(Number);
+                const lead = 18 * 60 - (h * 60 + m);
+                updateSettings({
+                  nightWakeTime,
+                  nightWakeLeadMinutes: lead > 0 ? lead : data.settings.nightWakeLeadMinutes,
+                });
+              }}
             />
           </label>
         </div>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="chip"
+            onClick={() =>
+              updateSettings({
+                dayWakeTime: CSV_DEFAULT_WAKE.day,
+                nightWakeTime: CSV_DEFAULT_WAKE.night,
+                dayWakeLeadMinutes: 71,
+                nightWakeLeadMinutes: 71,
+              })
+            }
+          >
+            Reset to CSV defaults
+          </button>
+        </div>
         <p className="help">
-          Day (06:00) default wake ~{Math.floor((6 * 60 - data.settings.dayWakeLeadMinutes) / 60)}:
-          {String((6 * 60 - data.settings.dayWakeLeadMinutes) % 60).padStart(2, "0")} · Night
-          (18:00) default wake ~
-          {String(Math.floor((18 * 60 - data.settings.nightWakeLeadMinutes) / 60)).padStart(2, "0")}:
-          {String((18 * 60 - data.settings.nightWakeLeadMinutes) % 60).padStart(2, "0")}
+          Day shift starts 06:00 · Night shift starts 18:00. Changing these times updates upcoming
+          wake alerts immediately.
         </p>
       </section>
 

@@ -122,16 +122,26 @@ export function getShiftEnd(date: Date): Date | null {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 6, 0, 0, 0);
 }
 
-/** Earliest prep alarm from CSV (dog feed), else lead-minutes before start. */
-export function getWakeTime(date: Date, leadMinutes: number): Date | null {
+/** Resolve wake time: editable HH:MM override, else CSV dog feed, else lead minutes. */
+export function getWakeTime(
+  date: Date,
+  leadMinutes: number,
+  wakeTimeOverride?: string | null,
+): Date | null {
   const entry = getRotaEntry(date);
-  if (!entry) return null;
+  if (!entry && !wakeTimeOverride) return null;
 
-  const wakeHhmm =
-    entry.kind === "day" ? entry.morningDogFeed : entry.afternoonDogFeed;
+  const csvWake =
+    entry?.kind === "day"
+      ? entry.morningDogFeed
+      : entry?.kind === "night"
+        ? entry.afternoonDogFeed
+        : null;
 
+  const wakeHhmm = (wakeTimeOverride?.trim() || csvWake || "").trim();
   if (wakeHhmm) {
     const [h, m] = wakeHhmm.split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
     const wake = startOfLocalDay(date);
     wake.setHours(h, m, 0, 0);
     return wake;

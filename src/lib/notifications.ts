@@ -113,10 +113,12 @@ export function buildSchedule(settings: AppSettings, from = new Date()): Schedul
       if (shift.kind === "off") continue;
       const lead =
         shift.kind === "day" ? settings.dayWakeLeadMinutes : settings.nightWakeLeadMinutes;
-      const at = getWakeTime(day, lead);
+      const wakeOverride =
+        shift.kind === "day" ? settings.dayWakeTime : settings.nightWakeTime;
+      const at = getWakeTime(day, lead, wakeOverride);
       if (!at || at.getTime() < from.getTime() - 60_000) continue;
       events.push({
-        id: `wake-${toDateKey(day)}`,
+        id: `wake-${toDateKey(day)}-${wakeOverride || "default"}`,
         at,
         type: "wake",
         title: `Wake up — ${shift.label}`,

@@ -79,6 +79,9 @@ export function TodayView() {
         wakeTarget.kind === "day"
           ? data.settings.dayWakeLeadMinutes
           : data.settings.nightWakeLeadMinutes,
+        wakeTarget.kind === "day"
+          ? data.settings.dayWakeTime
+          : data.settings.nightWakeTime,
       )
     : null;
 

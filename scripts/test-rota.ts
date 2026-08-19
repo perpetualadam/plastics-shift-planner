@@ -28,6 +28,21 @@ assert.ok(wake);
 assert.equal(wake.getHours(), 4);
 assert.equal(wake.getMinutes(), 49);
 
+const customWake = getWakeTime(new Date(2026, 7, 20), 90, "05:15");
+assert.ok(customWake);
+assert.equal(customWake.getHours(), 5);
+assert.equal(customWake.getMinutes(), 15);
+
+const nightWake = getWakeTime(new Date(2026, 0, 17), 71);
+assert.ok(nightWake);
+assert.equal(nightWake.getHours(), 16);
+assert.equal(nightWake.getMinutes(), 49);
+
+const customNightWake = getWakeTime(new Date(2026, 0, 17), 71, "17:30");
+assert.ok(customNightWake);
+assert.equal(customNightWake.getHours(), 17);
+assert.equal(customNightWake.getMinutes(), 30);
+
 assert.equal(ROTA_DATES.length, 182);
 assert.equal(ROTA_BY_DATE["2026-08-20"]?.kind, "day");
 

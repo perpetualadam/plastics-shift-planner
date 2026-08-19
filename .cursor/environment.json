@@ -1,0 +1,16 @@
+{
+  "name": "Plastics Shift Planner",
+  "install": "if [ -f package.json ]; then npm ci; fi",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev"
+    }
+  ],
+  "ports": [
+    {
+      "name": "Next.js dev server",
+      "port": 3000
+    }
+  ]
+}

@@ -136,7 +136,7 @@ export function SettingsView() {
           </label>
         </div>
         <label className="grow block-field">
-          First rota shift (after induction)
+          First B-shift day (from CSV)
           <input
             type="date"
             value={data.settings.workStartDate || "2026-08-20"}
@@ -144,8 +144,9 @@ export function SettingsView() {
           />
         </label>
         <p className="help">
-          Regular B-shift days count from this date. Induction / extra payable days below still
-          count even if they fall earlier (e.g. 18 Aug).
+          Matches the Plastics B-shift CSV: first working day is{" "}
+          <strong>Thu 20 Aug 2026</strong> (day shift 06:00–18:00). Earlier CSV days are ignored
+          for pay. Optional one-off days below can still be added if needed.
         </p>
       </section>
 
@@ -154,8 +155,8 @@ export function SettingsView() {
           <h2>Extra payable days</h2>
         </div>
         <p className="help">
-          Induction and other one-off paid days (not on the normal 12h rota). Default: 18 Aug 2026,
-          09:00–18:00 (9h paid).
+          Optional one-off paid days that are not on the normal 12h B-shift rota. Empty by default
+          — first paid shift is 20 Aug from the CSV.
         </p>
         {(data.extraWork ?? []).map((entry) => (
           <div key={entry.id} className="extra-work-card">
@@ -240,7 +241,7 @@ export function SettingsView() {
           onClick={() =>
             upsertExtraWork({
               id: uid(),
-              dateKey: "2026-08-18",
+              dateKey: data.settings.workStartDate || "2026-08-20",
               label: "Extra day",
               start: "09:00",
               end: "18:00",

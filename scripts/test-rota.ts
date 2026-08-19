@@ -18,10 +18,14 @@ assert.equal(getShiftForDate(new Date(2026, 0, 7)).kind, "off");
 assert.equal(getShiftForDate(new Date(2026, 0, 8)).kind, "day");
 assert.equal(getShiftForDate(new Date(2026, 0, 17)).kind, "night");
 
-// User working Thu 20 Aug 2026 (day shift)
+// User working Thu 20 Aug 2026 (day shift) — first B-shift day on this job
 assert.equal(getShiftForDate(new Date(2026, 7, 19)).kind, "off");
 assert.equal(getShiftForDate(new Date(2026, 7, 20)).kind, "day");
 assert.equal(getShiftForDate(new Date(2026, 7, 21)).kind, "day");
+assert.equal(ROTA_BY_DATE["2026-08-18"], undefined);
+assert.equal(ROTA_BY_DATE["2026-08-20"]?.kind, "day");
+assert.equal(ROTA_BY_DATE["2026-08-20"]?.start, "06:00");
+assert.equal(ROTA_BY_DATE["2026-08-20"]?.end, "18:00");
 
 const wake = getWakeTime(new Date(2026, 7, 20), 90);
 assert.ok(wake);

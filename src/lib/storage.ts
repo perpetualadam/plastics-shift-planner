@@ -19,7 +19,7 @@ export type AppSettings = {
   /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
   dayWakeTime: string;
   nightWakeTime: string;
-  /** First real shift (excludes induction / earlier CSV days from pay). */
+  /** First B-shift day that counts for pay (from CSV; default 2026-08-20). */
   workStartDate: string;
   /** Clock hours on site per shift (usually 12). */
   shiftClockHours: number;
@@ -155,19 +155,11 @@ export const CSV_DEFAULT_WAKE = {
   night: "16:49",
 } as const;
 
-/** Default payable induction — 18 Aug 2026, 09:00–18:00 (9h). */
-export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [
-  {
-    id: "induction-2026-08-18",
-    dateKey: "2026-08-18",
-    label: "Induction",
-    start: "09:00",
-    end: "18:00",
-    clockHours: 9,
-    paidHours: 9,
-    note: "Payable induction day",
-  },
-];
+/** No default extras — first paid day is CSV B-shift on workStartDate (2026-08-20). */
+export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [];
+
+/** Legacy seed from an earlier build; 18 Aug is not a B-shift CSV day. */
+const LEGACY_INDUCTION_ID = "induction-2026-08-18";
 
 function hoursBetween(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number);
@@ -219,19 +211,18 @@ function normalizeLoss(raw: Partial<AttendanceBonusLoss>): AttendanceBonusLoss |
 }
 
 function normalizeData(parsed: Partial<AppData>): AppData {
-  const hasExtraKey = Object.prototype.hasOwnProperty.call(parsed, "extraWork");
   const losses = (parsed.attendanceBonusLosses ?? [])
     .map((l) => normalizeLoss(l as Partial<AttendanceBonusLoss>))
     .filter((l): l is AttendanceBonusLoss => l !== null);
+  const extraWork = (parsed.extraWork ?? DEFAULT_EXTRA_WORK.map((e) => ({ ...e }))).filter(
+    (e) => e.id !== LEGACY_INDUCTION_ID,
+  );
   return {
     settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
     overtime: parsed.overtime ?? [],
     notes: parsed.notes ?? [],
     adjustments: parsed.adjustments ?? [],
-    // Seed induction only when older installs never had this field
-    extraWork: hasExtraKey
-      ? (parsed.extraWork ?? [])
-      : DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+    extraWork,
     attendanceBonusLosses: losses,
     notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
     installedHintDismissed: parsed.installedHintDismissed ?? false,

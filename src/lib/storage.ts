@@ -72,12 +72,56 @@ export type ExtraWorkEntry = {
   note?: string;
 };
 
+/** Reasons that can void the monthly attendance bonus. */
+export type AttendanceBonusLossReason =
+  | "late"
+  | "clock_out_early"
+  | "absence"
+  | "other";
+
+export type AttendanceBonusLossStatus = "active" | "expired";
+
+export type AttendanceBonusLoss = {
+  id: string;
+  /** Calendar month this loss applies to, e.g. "2026-08". */
+  monthKey: string;
+  reason: AttendanceBonusLossReason;
+  /** Optional date of the incident (YYYY-MM-DD). */
+  dateKey?: string;
+  note?: string;
+  /** Active losses void the bonus; expired ones are kept for history only. */
+  status: AttendanceBonusLossStatus;
+  createdAt: string;
+};
+
+/** Fixed monthly attendance bonus (GBP). */
+export const ATTENDANCE_BONUS_AMOUNT = 200;
+
+export const ATTENDANCE_BONUS_REASON_OPTIONS: {
+  id: AttendanceBonusLossReason;
+  label: string;
+}[] = [
+  { id: "late", label: "Late" },
+  { id: "clock_out_early", label: "Clock out early" },
+  { id: "absence", label: "Absence" },
+  { id: "other", label: "Other" },
+];
+
+export function attendanceBonusReasonLabel(reason: AttendanceBonusLossReason): string {
+  return ATTENDANCE_BONUS_REASON_OPTIONS.find((o) => o.id === reason)?.label ?? reason;
+}
+
+export function monthKeyFromParts(year: number, month: number): string {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
 export type AppData = {
   settings: AppSettings;
   overtime: OvertimeEntry[];
   notes: DayNote[];
   adjustments: PayAdjustment[];
   extraWork: ExtraWorkEntry[];
+  attendanceBonusLosses: AttendanceBonusLoss[];
   notificationPermissionAsked: boolean;
   installedHintDismissed: boolean;
 };
@@ -153,13 +197,32 @@ function emptyData(): AppData {
     notes: [],
     adjustments: [],
     extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+    attendanceBonusLosses: [],
     notificationPermissionAsked: false,
     installedHintDismissed: false,
   };
 }
 
+function normalizeLoss(raw: Partial<AttendanceBonusLoss>): AttendanceBonusLoss | null {
+  if (!raw || typeof raw.id !== "string" || typeof raw.monthKey !== "string") return null;
+  const reason = (raw.reason ?? "other") as AttendanceBonusLossReason;
+  const status: AttendanceBonusLossStatus = raw.status === "expired" ? "expired" : "active";
+  return {
+    id: raw.id,
+    monthKey: raw.monthKey,
+    reason: ATTENDANCE_BONUS_REASON_OPTIONS.some((o) => o.id === reason) ? reason : "other",
+    dateKey: typeof raw.dateKey === "string" ? raw.dateKey : undefined,
+    note: typeof raw.note === "string" ? raw.note : undefined,
+    status,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+  };
+}
+
 function normalizeData(parsed: Partial<AppData>): AppData {
   const hasExtraKey = Object.prototype.hasOwnProperty.call(parsed, "extraWork");
+  const losses = (parsed.attendanceBonusLosses ?? [])
+    .map((l) => normalizeLoss(l as Partial<AttendanceBonusLoss>))
+    .filter((l): l is AttendanceBonusLoss => l !== null);
   return {
     settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
     overtime: parsed.overtime ?? [],
@@ -169,6 +232,7 @@ function normalizeData(parsed: Partial<AppData>): AppData {
     extraWork: hasExtraKey
       ? (parsed.extraWork ?? [])
       : DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+    attendanceBonusLosses: losses,
     notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
     installedHintDismissed: parsed.installedHintDismissed ?? false,
   };
@@ -219,6 +283,29 @@ export function overtimeForMonth(
 ): OvertimeEntry[] {
   const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
   return data.overtime.filter((o) => o.dateKey.startsWith(prefix));
+}
+
+export function attendanceBonusLossesForMonth(
+  data: AppData,
+  year: number,
+  month: number,
+): AttendanceBonusLoss[] {
+  const key = monthKeyFromParts(year, month);
+  return (data.attendanceBonusLosses ?? [])
+    .filter((l) => l.monthKey === key)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** True when any active loss voids the £200 bonus for that month. */
+export function hasActiveAttendanceBonusLoss(
+  data: AppData,
+  year: number,
+  month: number,
+): boolean {
+  const key = monthKeyFromParts(year, month);
+  return (data.attendanceBonusLosses ?? []).some(
+    (l) => l.monthKey === key && l.status === "active",
+  );
 }
 
 export function exportBackup(data: AppData): string {

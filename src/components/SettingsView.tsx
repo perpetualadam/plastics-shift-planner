@@ -410,6 +410,7 @@ export function SettingsView() {
               notes: [],
               adjustments: [],
               extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
+              attendanceBonusLosses: [],
               notificationPermissionAsked: false,
               installedHintDismissed: false,
             };

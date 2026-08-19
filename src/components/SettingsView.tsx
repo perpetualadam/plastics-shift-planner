@@ -4,11 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { paidHoursFromBreak } from "@/lib/pay";
 import {
+  DEFAULT_EXTRA_WORK,
   DEFAULT_SETTINGS,
   exportBackup,
   importBackup,
+  uid,
   type AppData,
 } from "@/lib/storage";
+
+function hoursFromTimes(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if (![sh, sm, eh, em].every(Number.isFinite)) return 0;
+  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+}
 
 /** Number input that allows clearing (no sticky zero). */
 function NumberField({
@@ -82,7 +91,7 @@ function NumberField({
 }
 
 export function SettingsView() {
-  const { data, setData, updateSettings } = useAppData();
+  const { data, setData, updateSettings, upsertExtraWork, removeExtraWork } = useAppData();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState("");
 
@@ -127,7 +136,7 @@ export function SettingsView() {
           </label>
         </div>
         <label className="grow block-field">
-          First paid shift (excludes induction)
+          First rota shift (after induction)
           <input
             type="date"
             value={data.settings.workStartDate || "2026-08-20"}
@@ -135,9 +144,113 @@ export function SettingsView() {
           />
         </label>
         <p className="help">
-          Rota still shows full CSV calendar. Pay / YTD only count from this date (default 20 Aug
-          2026 — first shift after induction).
+          Regular B-shift days count from this date. Induction / extra payable days below still
+          count even if they fall earlier (e.g. 18 Aug).
         </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Extra payable days</h2>
+        </div>
+        <p className="help">
+          Induction and other one-off paid days (not on the normal 12h rota). Default: 18 Aug 2026,
+          09:00–18:00 (9h paid).
+        </p>
+        {(data.extraWork ?? []).map((entry) => (
+          <div key={entry.id} className="extra-work-card">
+            <div className="form-row wrap">
+              <label className="grow">
+                Label
+                <input
+                  value={entry.label}
+                  onChange={(e) =>
+                    upsertExtraWork({ ...entry, label: e.target.value || "Extra day" })
+                  }
+                />
+              </label>
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={entry.dateKey}
+                  onChange={(e) => upsertExtraWork({ ...entry, dateKey: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="form-row wrap">
+              <label>
+                Start
+                <input
+                  type="time"
+                  value={entry.start}
+                  onChange={(e) => {
+                    const start = e.target.value || "09:00";
+                    const clockHours = hoursFromTimes(start, entry.end);
+                    upsertExtraWork({
+                      ...entry,
+                      start,
+                      clockHours,
+                      paidHours: entry.paidHours ?? clockHours,
+                    });
+                  }}
+                />
+              </label>
+              <label>
+                End
+                <input
+                  type="time"
+                  value={entry.end}
+                  onChange={(e) => {
+                    const end = e.target.value || "18:00";
+                    const clockHours = hoursFromTimes(entry.start, end);
+                    upsertExtraWork({
+                      ...entry,
+                      end,
+                      clockHours,
+                      paidHours: entry.paidHours ?? clockHours,
+                    });
+                  }}
+                />
+              </label>
+              <NumberField
+                label="Paid hours"
+                value={entry.paidHours ?? entry.clockHours ?? 9}
+                min={0}
+                max={24}
+                step="0.25"
+                onCommit={(paidHours) => {
+                  const clockHours = hoursFromTimes(entry.start, entry.end);
+                  upsertExtraWork({ ...entry, clockHours, paidHours });
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => removeExtraWork(entry.id)}
+            >
+              Remove day
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() =>
+            upsertExtraWork({
+              id: uid(),
+              dateKey: "2026-08-18",
+              label: "Extra day",
+              start: "09:00",
+              end: "18:00",
+              clockHours: 9,
+              paidHours: 9,
+            })
+          }
+        >
+          Add payable day
+        </button>
       </section>
 
       <section className="panel">
@@ -296,6 +409,7 @@ export function SettingsView() {
               overtime: [],
               notes: [],
               adjustments: [],
+              extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
               notificationPermissionAsked: false,
               installedHintDismissed: false,
             };

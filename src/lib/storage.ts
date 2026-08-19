@@ -19,6 +19,12 @@ export type AppSettings = {
   /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
   dayWakeTime: string;
   nightWakeTime: string;
+  /** First real shift (excludes induction / earlier CSV days from pay). */
+  workStartDate: string;
+  /** Clock hours on site per shift (usually 12). */
+  shiftClockHours: number;
+  /** Hours paid per shift (editable; unpaid break = clock − paid). */
+  paidHoursPerShift: number;
   /** Break length per shift in minutes (meal / rest). */
   breakMinutes: number;
   /** When false, break time is unpaid and deducted from paid hours. */
@@ -72,6 +78,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nightWakeLeadMinutes: 71,
   dayWakeTime: "04:49",
   nightWakeTime: "16:49",
+  workStartDate: "2026-08-20",
+  shiftClockHours: 12,
+  paidHoursPerShift: 11.5,
   breakMinutes: 30,
   breakPaid: false,
   alarmSound: "pulse",

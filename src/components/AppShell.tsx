@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div>
           <p className="brand">{data.settings.plantName}</p>
-          <p className="brand-sub">{data.settings.shiftName} · 2-2-3</p>
+          <p className="brand-sub">{data.settings.shiftName}</p>
         </div>
         <div className="topbar-right">
           <span className={`pill ${online ? "online" : "offline"}`}>

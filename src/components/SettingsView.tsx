@@ -46,7 +46,9 @@ export function SettingsView() {
             />
           </label>
         </div>
-        <p className="help">Locked to Plastics B rota: 2 days · 2 nights · 3 off · 12h (06–18 / 18–06).</p>
+        <p className="help">
+          Plastics B 2026 CSV rota · 12h shifts (06–18 / 18–06). Breaks configured below.
+        </p>
       </section>
 
       <section className="panel">
@@ -97,6 +99,61 @@ export function SettingsView() {
               <option value="USD">USD</option>
             </select>
           </label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Breaks</h2>
+        </div>
+        <p className="help">
+          12h clock shifts. Unpaid breaks reduce paid hours and wages; paid breaks keep the full
+          12h.
+        </p>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={data.settings.breakPaid}
+            onChange={(e) => updateSettings({ breakPaid: e.target.checked })}
+          />
+          <span>{data.settings.breakPaid ? "Break is paid" : "Break is unpaid"}</span>
+        </label>
+        <div className="form-row wrap">
+          <label>
+            Break length (min)
+            <input
+              type="number"
+              min={0}
+              max={120}
+              step={5}
+              value={data.settings.breakMinutes}
+              onChange={(e) =>
+                updateSettings({
+                  breakMinutes: Math.max(0, Math.min(120, Number(e.target.value) || 0)),
+                })
+              }
+            />
+          </label>
+          <label>
+            Paid hours / shift
+            <input
+              type="text"
+              readOnly
+              value={`${(12 - (data.settings.breakPaid ? 0 : data.settings.breakMinutes / 60)).toFixed(2)} h`}
+            />
+          </label>
+        </div>
+        <div className="chip-row">
+          {[0, 20, 30, 45, 60].map((mins) => (
+            <button
+              key={mins}
+              type="button"
+              className={`chip ${data.settings.breakMinutes === mins ? "on" : ""}`}
+              onClick={() => updateSettings({ breakMinutes: mins })}
+            >
+              {mins === 0 ? "None" : `${mins}m`}
+            </button>
+          ))}
         </div>
       </section>
 
@@ -163,8 +220,8 @@ export function SettingsView() {
       <section className="panel about">
         <h2>Plastics Shift</h2>
         <p>
-          Personal B-shift planner — offline-first PWA. Pattern matched to your 2026 Plastics rota
-          (yellow boxes): 2 day, 2 night, 3 off.
+          Personal B-shift planner — offline-first PWA. Schedule from your 2026 Plastics CSV rota
+          with editable wake times and paid/unpaid breaks.
         </p>
         <p className="fineprint">v0.1 · data stays on your phone</p>
       </section>

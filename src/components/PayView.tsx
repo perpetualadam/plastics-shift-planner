@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import {
+  breakLabel,
   calculateMonthPay,
   estimatedAnnual,
   money,
@@ -52,7 +53,9 @@ export function PayView() {
           </button>
         </div>
         <p className="pay-total">{money(pay.total, data.settings.currency)}</p>
-        <p className="pay-sub">Estimated take for scheduled hours + OT + adjustments</p>
+        <p className="pay-sub">
+          Estimated take for paid hours + OT + adjustments · {breakLabel(data.settings)}
+        </p>
       </section>
 
       <section className="panel stats-grid">
@@ -65,8 +68,16 @@ export function PayView() {
           <p className="stat-value">{pay.scheduledNights}</p>
         </div>
         <div>
-          <p className="stat-label">Scheduled hrs</p>
+          <p className="stat-label">Clock hrs</p>
           <p className="stat-value">{pay.scheduledHours}</p>
+        </div>
+        <div>
+          <p className="stat-label">Paid hrs</p>
+          <p className="stat-value">{Number(pay.paidHours.toFixed(2))}</p>
+        </div>
+        <div>
+          <p className="stat-label">Unpaid break</p>
+          <p className="stat-value">{Number(pay.unpaidBreakHours.toFixed(2))}h</p>
         </div>
         <div>
           <p className="stat-label">OT hours</p>
@@ -207,7 +218,11 @@ export function PayView() {
             <li key={r.dateKey} className={`kind-${r.kind}`}>
               <span>{r.dateKey}</span>
               <span>{r.kind}</span>
-              <span>{r.scheduledHours}h</span>
+              <span>
+                {r.paidHours === r.scheduledHours
+                  ? `${r.scheduledHours}h`
+                  : `${r.paidHours}h paid / ${r.scheduledHours}h`}
+              </span>
               <span>{r.overtimeHours > 0 ? `+${r.overtimeHours} OT` : "—"}</span>
             </li>
           ))}
@@ -219,8 +234,8 @@ export function PayView() {
         {data.settings.overtimeMultiplier}
         {data.settings.nightPremium
           ? ` · night +${money(data.settings.nightPremium, data.settings.currency)}/hr`
-          : ""}
-        . Change in Settings.
+          : ""}{" "}
+        · {breakLabel(data.settings)}. Change in Settings.
       </p>
     </div>
   );

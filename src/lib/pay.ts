@@ -8,8 +8,10 @@ import {
 } from "./rota";
 import { ROTA_DATES } from "./rotaData";
 import {
+  ATTENDANCE_BONUS_AMOUNT,
   extraWorkClockHours,
   extraWorkPaidHours,
+  hasActiveAttendanceBonusLoss,
   type AppData,
   type AppSettings,
   type ExtraWorkEntry,
@@ -33,6 +35,10 @@ export type PayBreakdown = {
   overtimeHours: number;
   overtimePay: number;
   adjustments: number;
+  /** Monthly attendance bonus(es) included in this range (£200 when no active losses). */
+  attendanceBonus: number;
+  /** How many months in the range still qualify for the bonus. */
+  attendanceBonusMonths: number;
   total: number;
   effectiveHourly: number;
 };
@@ -104,6 +110,33 @@ function extraWorkInRange(data: AppData, startKey: string, endKey: string): Extr
   return (data.extraWork ?? []).filter((e) => e.dateKey >= startKey && e.dateKey <= endKey);
 }
 
+/** Sum £200 for each calendar month in [start, end] with no active loss reasons. */
+export function attendanceBonusInRange(data: AppData, start: Date, end: Date): {
+  amount: number;
+  months: number;
+} {
+  const from = startOfLocalDay(start);
+  const to = startOfLocalDay(end);
+  if (from.getTime() > to.getTime()) return { amount: 0, months: 0 };
+
+  let amount = 0;
+  let months = 0;
+  const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+  const lastMonth = new Date(to.getFullYear(), to.getMonth(), 1);
+
+  while (cursor.getTime() <= lastMonth.getTime()) {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+    if (!hasActiveAttendanceBonusLoss(data, y, m)) {
+      amount += ATTENDANCE_BONUS_AMOUNT;
+      months += 1;
+    }
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return { amount, months };
+}
+
 export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdown {
   const { settings } = data;
   const fullStartKey = toDateKey(startOfLocalDay(start));
@@ -141,7 +174,13 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
   );
   const adjustments = adjustmentsList.reduce((sum, a) => sum + a.amount, 0);
 
-  const total = basePay + nightPremiumPay + overtimePay + adjustments;
+  const { amount: attendanceBonus, months: attendanceBonusMonths } = attendanceBonusInRange(
+    data,
+    start,
+    end,
+  );
+
+  const total = basePay + nightPremiumPay + overtimePay + adjustments + attendanceBonus;
   const effectiveHourly =
     paidHours + overtimeHours > 0 ? total / (paidHours + overtimeHours) : 0;
 
@@ -159,6 +198,8 @@ export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdow
     overtimeHours,
     overtimePay,
     adjustments,
+    attendanceBonus,
+    attendanceBonusMonths,
     total,
     effectiveHourly,
   };
@@ -257,7 +298,23 @@ export function estimatedAnnual(data: AppData): number {
   const base = (workDays * hoursPer + extraPaid) * data.settings.hourlyRate;
   const nightsShare = 0.5;
   const nightPrem = workDays * nightsShare * hoursPer * data.settings.nightPremium;
-  return base + nightPrem;
+  // Rough: £200 × remaining calendar months from work start through year end of rota span
+  let bonusMonths = 0;
+  if (ROTA_DATES.length > 0) {
+    const first = startKey || ROTA_DATES[0];
+    const last = ROTA_DATES[ROTA_DATES.length - 1];
+    const from = parseDateKey(first);
+    const to = parseDateKey(last);
+    const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+    const end = new Date(to.getFullYear(), to.getMonth(), 1);
+    while (cursor.getTime() <= end.getTime()) {
+      if (!hasActiveAttendanceBonusLoss(data, cursor.getFullYear(), cursor.getMonth())) {
+        bonusMonths += 1;
+      }
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+  return base + nightPrem + bonusMonths * ATTENDANCE_BONUS_AMOUNT;
 }
 
 export function parseMonthKey(dateKey: string): { year: number; month: number } {

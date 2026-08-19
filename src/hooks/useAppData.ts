@@ -6,8 +6,12 @@ import {
   saveData,
   type AppData,
   type AppSettings,
+  type AttendanceBonusLoss,
+  type AttendanceBonusLossReason,
+  type AttendanceBonusLossStatus,
   type ExtraWorkEntry,
   type OvertimeEntry,
+  monthKeyFromParts,
   uid,
 } from "@/lib/storage";
 import { toDateKey } from "@/lib/rota";
@@ -134,6 +138,54 @@ export function useAppData() {
     [setData],
   );
 
+  const addAttendanceBonusLoss = useCallback(
+    (input: {
+      year: number;
+      month: number;
+      reason: AttendanceBonusLossReason;
+      dateKey?: string;
+      note?: string;
+      status?: AttendanceBonusLossStatus;
+    }) => {
+      const entry: AttendanceBonusLoss = {
+        id: uid(),
+        monthKey: monthKeyFromParts(input.year, input.month),
+        reason: input.reason,
+        dateKey: input.dateKey,
+        note: input.note?.trim() || undefined,
+        status: input.status ?? "active",
+        createdAt: new Date().toISOString(),
+      };
+      setData((prev) => ({
+        ...prev,
+        attendanceBonusLosses: [...(prev.attendanceBonusLosses ?? []), entry],
+      }));
+    },
+    [setData],
+  );
+
+  const setAttendanceBonusLossStatus = useCallback(
+    (id: string, status: AttendanceBonusLossStatus) => {
+      setData((prev) => ({
+        ...prev,
+        attendanceBonusLosses: (prev.attendanceBonusLosses ?? []).map((l) =>
+          l.id === id ? { ...l, status } : l,
+        ),
+      }));
+    },
+    [setData],
+  );
+
+  const removeAttendanceBonusLoss = useCallback(
+    (id: string) => {
+      setData((prev) => ({
+        ...prev,
+        attendanceBonusLosses: (prev.attendanceBonusLosses ?? []).filter((l) => l.id !== id),
+      }));
+    },
+    [setData],
+  );
+
   return {
     data,
     setData,
@@ -145,5 +197,8 @@ export function useAppData() {
     removeAdjustment,
     upsertExtraWork,
     removeExtraWork,
+    addAttendanceBonusLoss,
+    setAttendanceBonusLossStatus,
+    removeAttendanceBonusLoss,
   };
 }

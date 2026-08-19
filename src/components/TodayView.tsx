@@ -133,9 +133,9 @@ export function TodayView() {
           </p>
         </div>
         <div>
-          <p className="stat-label">Hours</p>
+          <p className="stat-label">Paid hrs</p>
           <p className="stat-value">
-            {monthPay.scheduledHours}
+            {Number(monthPay.paidHours.toFixed(2))}
             <span>h</span>
           </p>
         </div>

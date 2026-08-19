@@ -1,17 +1,25 @@
 import {
   countWorkDaysInRange,
-  getShiftForDate,
+  DAY_SHIFT_HOURS,
   parseDateKey,
   startOfLocalDay,
   toDateKey,
+  getShiftForDate,
   type ShiftKind,
 } from "./rota";
-import type { AppData, OvertimeEntry, PayAdjustment } from "./storage";
+import { ROTA_DATES } from "./rotaData";
+import type { AppData, AppSettings, OvertimeEntry, PayAdjustment } from "./storage";
 
 export type PayBreakdown = {
   scheduledDays: number;
   scheduledNights: number;
+  /** Clock hours on site (includes unpaid break time). */
   scheduledHours: number;
+  /** Hours that attract base pay after break rules. */
+  paidHours: number;
+  unpaidBreakHours: number;
+  breakMinutes: number;
+  breakPaid: boolean;
   basePay: number;
   nightPremiumPay: number;
   overtimeHours: number;
@@ -40,15 +48,28 @@ export function monthRange(year: number, month: number): { start: Date; end: Dat
   };
 }
 
-export function calculatePay(
-  data: AppData,
-  start: Date,
-  end: Date,
-): PayBreakdown {
+/** Unpaid break hours deducted from one shift (0 when breaks are paid). */
+export function unpaidBreakHoursPerShift(settings: AppSettings): number {
+  if (settings.breakPaid) return 0;
+  const mins = Math.max(0, settings.breakMinutes || 0);
+  return Math.min(DAY_SHIFT_HOURS, mins / 60);
+}
+
+/** Paid hours for one completed day or night shift. */
+export function paidHoursPerShift(settings: AppSettings, clockHours = DAY_SHIFT_HOURS): number {
+  return Math.max(0, clockHours - unpaidBreakHoursPerShift(settings));
+}
+
+export function calculatePay(data: AppData, start: Date, end: Date): PayBreakdown {
   const { settings } = data;
   const counts = countWorkDaysInRange(start, end);
-  const basePay = counts.hours * settings.hourlyRate;
-  const nightPremiumPay = counts.nights * 12 * settings.nightPremium;
+  const shifts = counts.days + counts.nights;
+  const unpaidBreakHours = shifts * unpaidBreakHoursPerShift(settings);
+  const paidHours = Math.max(0, counts.hours - unpaidBreakHours);
+  const hoursPerShift = paidHoursPerShift(settings);
+
+  const basePay = paidHours * settings.hourlyRate;
+  const nightPremiumPay = counts.nights * hoursPerShift * settings.nightPremium;
 
   const startKey = toDateKey(startOfLocalDay(start));
   const endKey = toDateKey(startOfLocalDay(end));
@@ -67,12 +88,16 @@ export function calculatePay(
 
   const total = basePay + nightPremiumPay + overtimePay + adjustments;
   const effectiveHourly =
-    counts.hours + overtimeHours > 0 ? total / (counts.hours + overtimeHours) : 0;
+    paidHours + overtimeHours > 0 ? total / (paidHours + overtimeHours) : 0;
 
   return {
     scheduledDays: counts.days,
     scheduledNights: counts.nights,
     scheduledHours: counts.hours,
+    paidHours,
+    unpaidBreakHours,
+    breakMinutes: settings.breakMinutes,
+    breakPaid: settings.breakPaid,
     basePay,
     nightPremiumPay,
     overtimeHours,
@@ -92,6 +117,7 @@ export type WorkedDayRow = {
   dateKey: string;
   kind: ShiftKind;
   scheduledHours: number;
+  paidHours: number;
   overtimeHours: number;
   note: string;
 };
@@ -117,6 +143,7 @@ export function workedDaysInMonth(
         dateKey: key,
         kind: shift.kind,
         scheduledHours: shift.hours,
+        paidHours: paidHoursPerShift(data.settings, shift.hours),
         overtimeHours: ot,
         note,
       });
@@ -140,16 +167,21 @@ export function yearToDatePay(data: AppData, asOf: Date = new Date()): PayBreakd
 }
 
 export function estimatedAnnual(data: AppData): number {
-  // Rough: 4 work days per 7-day cycle on 2-2-3
-  const workDaysPerYear = (4 / 7) * 365.25;
-  const hours = workDaysPerYear * 12;
-  const base = hours * data.settings.hourlyRate;
+  const workDays = ROTA_DATES.length;
+  const hoursPer = paidHoursPerShift(data.settings);
+  const base = workDays * hoursPer * data.settings.hourlyRate;
   const nightsShare = 0.5;
-  const nightPrem = workDaysPerYear * nightsShare * 12 * data.settings.nightPremium;
+  const nightPrem = workDays * nightsShare * hoursPer * data.settings.nightPremium;
   return base + nightPrem;
 }
 
 export function parseMonthKey(dateKey: string): { year: number; month: number } {
   const d = parseDateKey(dateKey);
   return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+export function breakLabel(settings: AppSettings): string {
+  const mins = settings.breakMinutes || 0;
+  if (mins <= 0) return "No break";
+  return `${mins} min ${settings.breakPaid ? "paid" : "unpaid"} break`;
 }

@@ -19,6 +19,10 @@ export type AppSettings = {
   /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
   dayWakeTime: string;
   nightWakeTime: string;
+  /** Break length per shift in minutes (meal / rest). */
+  breakMinutes: number;
+  /** When false, break time is unpaid and deducted from paid hours. */
+  breakPaid: boolean;
   alarmSound: AlarmSoundId;
   alarmVolume: number;
   remindersEnabled: boolean;
@@ -68,6 +72,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nightWakeLeadMinutes: 71,
   dayWakeTime: "04:49",
   nightWakeTime: "16:49",
+  breakMinutes: 30,
+  breakPaid: false,
   alarmSound: "pulse",
   alarmVolume: 0.85,
   remindersEnabled: true,

@@ -6,6 +6,7 @@ import {
   buildSchedule,
   ensureNotificationPermission,
   nextEventSummary,
+  sendTestNotification,
 } from "@/lib/notifications";
 import { SOUND_OPTIONS, playAlarmSound } from "@/lib/sounds";
 import { CSV_DEFAULT_WAKE, type AlarmSoundId } from "@/lib/storage";
@@ -13,7 +14,10 @@ import { CSV_DEFAULT_WAKE, type AlarmSoundId } from "@/lib/storage";
 export function AlarmsView() {
   const { data, updateSettings } = useAppData();
   const [status, setStatus] = useState<string>("");
-  const upcoming = useMemo(() => buildSchedule(data.settings).slice(0, 12), [data.settings]);
+  const upcoming = useMemo(
+    () => buildSchedule(data.settings).filter((e) => e.at.getTime() >= Date.now() - 60_000).slice(0, 12),
+    [data.settings],
+  );
   const next = useMemo(() => nextEventSummary(data.settings), [data.settings]);
 
   const toggleReminderTime = (time: string) => {
@@ -171,24 +175,53 @@ export function AlarmsView() {
 
       <section className="panel">
         <div className="panel-head">
+          <h2>How alarms work</h2>
+        </div>
+        <p className="help">
+          This is a web app, not the phone Clock app. Browsers <strong>cannot</strong> reliably wake
+          a sleeping phone. Alarms and notifications fire best when:
+        </p>
+        <ul className="help" style={{ margin: "0.5rem 0 0", paddingLeft: "1.2rem" }}>
+          <li>The app is installed to your home screen</li>
+          <li>Notification permission is allowed</li>
+          <li>You open the app after a reboot (re-arms the schedule)</li>
+          <li>Optionally leave it open / in recent apps overnight</li>
+        </ul>
+        <p className="help" style={{ marginTop: "0.75rem" }}>
+          For must-not-miss wake-ups, mirror the times below in your phone’s Clock app. If you open
+          this app within ~30 minutes of a missed alert, it will still notify you as “Missed”.
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
           <h2>Permissions</h2>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={async () => {
-            const p = await ensureNotificationPermission();
-            setStatus(p === "granted" ? "Notifications allowed." : `Permission: ${p}`);
-          }}
-        >
-          Request notification access
-        </button>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={async () => {
+              const p = await ensureNotificationPermission();
+              setStatus(p === "granted" ? "Notifications allowed." : `Permission: ${p}`);
+            }}
+          >
+            Request notification access
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={async () => {
+              const result = await sendTestNotification();
+              if (result === "ok") setStatus("Test notification sent — check your shade.");
+              else if (result === "denied") setStatus("Permission denied — enable notifications in phone settings.");
+              else setStatus("Notifications are not supported in this browser.");
+            }}
+          >
+            Send test notification
+          </button>
+        </div>
         {status && <p className="help">{status}</p>}
-        <p className="help">
-          Tip: keep the app installed on your home screen and open it after phone restarts so the
-          alarm watchdog can arm. For hard wake-ups, also add phone calendar alerts from the
-          upcoming list times.
-        </p>
       </section>
 
       <section className="panel">

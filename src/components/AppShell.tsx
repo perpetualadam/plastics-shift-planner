@@ -96,7 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="banner">
           <div>
             <strong>Enable reminders</strong>
-            <p>Day-before alerts at 5pm &amp; 8pm, plus wake alarms.</p>
+            <p>Needed for day-before alerts and wake alarms. Not as reliable as the phone Clock while asleep.</p>
           </div>
           <button
             type="button"
@@ -122,7 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="banner install">
           <div>
             <strong>Install on your phone</strong>
-            <p>Add to home screen for offline use &amp; faster alarms.</p>
+            <p>Add to home screen for offline use and better (still best-effort) alarm delivery.</p>
           </div>
           <button
             type="button"

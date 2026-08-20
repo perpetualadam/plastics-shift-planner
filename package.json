@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx --yes tsx scripts/test-rota.ts && npx --yes tsx scripts/test-pay.ts"
+    "test": "npx --yes tsx scripts/test-rota.ts && npx --yes tsx scripts/test-pay.ts && npx --yes tsx scripts/test-notifications.ts"
   },
   "dependencies": {
     "next": "16.3.1",

@@ -39,12 +39,21 @@ npm run build && npm start
 
 ## Notes on alarms
 
-Browsers cannot guarantee wake-ups when the phone is asleep like a native alarm app. For best results:
+**Short answer:** it tries to run in the background via a service worker, but phones routinely pause or kill web timers while asleep. It is **not** a replacement for the system Clock app.
+
+What happens today:
+
+1. While the app is open (or recently used), a page watchdog checks every ~15s and can ring wake alarms with sound.  
+2. A service worker keeps a **persisted** schedule and shows notifications when the OS still lets it run.  
+3. If you open the app within ~30 minutes of a due alert that was missed, you get a “Missed …” notification.  
+
+For best results:
 
 1. Install the PWA to your home screen  
-2. Allow notifications  
-3. Open the app after reboots so the watchdog re-arms  
-4. Optionally mirror critical wake times in your phone’s Clock app  
+2. Allow notifications (use **Send test notification** on the Alarms page)  
+3. Open the app after reboots so the schedule re-arms  
+4. **Mirror critical wake times in your phone’s Clock app** — that is the only reliable overnight wake-up on iOS/Android  
+
 
 ## Stack
 

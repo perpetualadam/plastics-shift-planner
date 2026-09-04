@@ -44,9 +44,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
-    const stop = startNotificationWatchdog(() => data.settings);
+    const stop = startNotificationWatchdog(() => ({
+      settings: data.settings,
+      rotaOverrides: data.rotaOverrides,
+    }));
     return stop;
-  }, [data.settings]);
+  }, [data.settings, data.rotaOverrides]);
 
   useEffect(() => {
     const onRing = (e: Event) => {

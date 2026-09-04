@@ -14,7 +14,7 @@ import {
   monthKeyFromParts,
   uid,
 } from "@/lib/storage";
-import { toDateKey } from "@/lib/rota";
+import { applyRotaKind, toDateKey, type ShiftKind } from "@/lib/rota";
 
 function subscribe(cb: () => void) {
   const onChange = () => cb();
@@ -186,6 +186,32 @@ export function useAppData() {
     [setData],
   );
 
+  const setRotaKind = useCallback(
+    (date: Date, kind: ShiftKind) => {
+      setData((prev) => ({
+        ...prev,
+        rotaOverrides: applyRotaKind(prev.rotaOverrides ?? {}, date, kind),
+      }));
+    },
+    [setData],
+  );
+
+  const clearRotaOverride = useCallback(
+    (date: Date) => {
+      const key = toDateKey(date);
+      setData((prev) => {
+        const next = { ...(prev.rotaOverrides ?? {}) };
+        delete next[key];
+        return { ...prev, rotaOverrides: next };
+      });
+    },
+    [setData],
+  );
+
+  const clearAllRotaOverrides = useCallback(() => {
+    setData((prev) => ({ ...prev, rotaOverrides: {} }));
+  }, [setData]);
+
   return {
     data,
     setData,
@@ -200,5 +226,8 @@ export function useAppData() {
     addAttendanceBonusLoss,
     setAttendanceBonusLossStatus,
     removeAttendanceBonusLoss,
+    setRotaKind,
+    clearRotaOverride,
+    clearAllRotaOverrides,
   };
 }

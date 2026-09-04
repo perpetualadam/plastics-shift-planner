@@ -16,6 +16,7 @@ Working days and prep times come from the official CSV:
 
 - Today view with countdown and CSV prep times  
 - Full month rota calendar (CSV dates)  
+- Editable rota — change any day to Day / Night / Off (saved locally; reset to CSV anytime)  
 - Day-before reminders (default **17:00** and **20:00**)  
 - Wake alarms with 6 built-in sounds  
 - Overtime logging, pay estimates, YTD, days worked  

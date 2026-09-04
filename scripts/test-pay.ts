@@ -27,6 +27,7 @@ const baseData: AppData = {
   extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
   attendanceBonusLosses: [],
   rotaOverrides: {},
+  customRota: null,
   notificationPermissionAsked: false,
   installedHintDismissed: false,
 };

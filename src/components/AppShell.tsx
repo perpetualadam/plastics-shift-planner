@@ -47,9 +47,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     const stop = startNotificationWatchdog(() => ({
       settings: data.settings,
       rotaOverrides: data.rotaOverrides,
+      baseRota: data.customRota?.byDate,
     }));
     return stop;
-  }, [data.settings, data.rotaOverrides]);
+  }, [data.settings, data.rotaOverrides, data.customRota]);
 
   useEffect(() => {
     const onRing = (e: Event) => {

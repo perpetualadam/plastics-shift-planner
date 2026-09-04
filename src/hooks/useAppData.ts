@@ -9,6 +9,7 @@ import {
   type AttendanceBonusLoss,
   type AttendanceBonusLossReason,
   type AttendanceBonusLossStatus,
+  type CustomRota,
   type ExtraWorkEntry,
   type OvertimeEntry,
   monthKeyFromParts,
@@ -190,7 +191,12 @@ export function useAppData() {
     (date: Date, kind: ShiftKind) => {
       setData((prev) => ({
         ...prev,
-        rotaOverrides: applyRotaKind(prev.rotaOverrides ?? {}, date, kind),
+        rotaOverrides: applyRotaKind(
+          prev.rotaOverrides ?? {},
+          date,
+          kind,
+          prev.customRota?.byDate,
+        ),
       }));
     },
     [setData],
@@ -212,6 +218,17 @@ export function useAppData() {
     setData((prev) => ({ ...prev, rotaOverrides: {} }));
   }, [setData]);
 
+  const setCustomRota = useCallback(
+    (customRota: CustomRota | null, clearOverrides = true) => {
+      setData((prev) => ({
+        ...prev,
+        customRota,
+        rotaOverrides: clearOverrides ? {} : prev.rotaOverrides,
+      }));
+    },
+    [setData],
+  );
+
   return {
     data,
     setData,
@@ -229,5 +246,6 @@ export function useAppData() {
     setRotaKind,
     clearRotaOverride,
     clearAllRotaOverrides,
+    setCustomRota,
   };
 }

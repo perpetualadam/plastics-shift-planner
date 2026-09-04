@@ -65,12 +65,13 @@ export function TodayView() {
   }, []);
 
   const overrides = data.rotaOverrides;
-  const today = getShiftForDate(now, overrides);
+  const base = data.customRota?.byDate;
+  const today = getShiftForDate(now, overrides, base);
   const key = dateKeyFrom(now);
   const savedNote = data.notes.find((n) => n.dateKey === key)?.text ?? "";
   const note = noteDraft ?? savedNote;
 
-  const upcoming = getUpcomingShifts(now, 6, overrides);
+  const upcoming = getUpcomingShifts(now, 6, overrides, base);
   const monthPay = calculateMonthPay(data, now.getFullYear(), now.getMonth());
 
   const wakeTarget = today.kind !== "off" ? today : upcoming[0];
@@ -84,6 +85,7 @@ export function TodayView() {
           ? data.settings.dayWakeTime
           : data.settings.nightWakeTime,
         overrides,
+        base,
       )
     : null;
 
@@ -113,7 +115,7 @@ export function TodayView() {
           </p>
         )}
         {(() => {
-          const prep = wakeTarget ? getPrepTimes(wakeTarget.date, overrides) : null;
+          const prep = wakeTarget ? getPrepTimes(wakeTarget.date, overrides, base) : null;
           if (!prep) return null;
           return (
             <ul className="prep-list">

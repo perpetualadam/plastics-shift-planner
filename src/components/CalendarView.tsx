@@ -23,6 +23,7 @@ const KIND_OPTIONS: { kind: ShiftKind; label: string }[] = [
 export function CalendarView() {
   const { data, setRotaKind, clearRotaOverride } = useAppData();
   const overrides = data.rotaOverrides ?? {};
+  const base = data.customRota?.byDate;
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
@@ -32,11 +33,11 @@ export function CalendarView() {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const shifts = useMemo(
-    () => getMonthShifts(year, month, overrides),
-    [year, month, overrides],
+    () => getMonthShifts(year, month, overrides, base),
+    [year, month, overrides, base],
   );
-  const selectedShift = getShiftForDate(selected, overrides);
-  const csvKind = getCsvKind(selected);
+  const selectedShift = getShiftForDate(selected, overrides, base);
+  const csvKind = getCsvKind(selected, base);
 
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Mon=0
   const blanks = Array.from({ length: firstDow });

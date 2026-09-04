@@ -1,6 +1,6 @@
-/** Plastics B-Shift rota — sourced from official 2026 CSV schedule, with local overrides */
+/** Plastics B-Shift rota — sourced from official CSV schedule (baked or uploaded), with local overrides */
 
-import { ROTA_BY_DATE, type RotaEntry } from "./rotaData";
+import { ROTA_BY_DATE, ROTA_DATES, type RotaEntry } from "./rotaData";
 import type { RotaOverrides } from "./storage";
 
 export type ShiftKind = "day" | "night" | "off";
@@ -20,6 +20,8 @@ export type ShiftDay = {
   overridden?: boolean;
 };
 
+export type BaseRota = Record<string, RotaEntry>;
+
 export const CYCLE_ANCHOR = new Date(2026, 0, 3);
 export const CYCLE_LENGTH = 7;
 export const DAY_SHIFT_HOURS = 12;
@@ -27,6 +29,17 @@ export const NIGHT_SHIFT_HOURS = 12;
 export const SHIFT_NAME = "B Shift";
 
 const DEFAULT_WARNINGS = ["17:00", "20:00"];
+
+/** Active schedule map: uploaded CSV when present, otherwise the baked-in rota. */
+export function resolveBaseRota(base?: BaseRota | null): BaseRota {
+  if (base && Object.keys(base).length > 0) return base;
+  return ROTA_BY_DATE as BaseRota;
+}
+
+export function resolveRotaDates(base?: BaseRota | null): string[] {
+  if (base && Object.keys(base).length > 0) return Object.keys(base).sort();
+  return [...ROTA_DATES];
+}
 
 export function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -50,9 +63,9 @@ function parseHour(hhmm: string | undefined | null): number | null {
   return Number.isFinite(h) ? h : null;
 }
 
-/** CSV / baked kind only (ignores local edits). */
-export function getCsvKind(date: Date): ShiftKind {
-  const entry = ROTA_BY_DATE[toDateKey(date)];
+/** CSV / base kind only (ignores local edits). */
+export function getCsvKind(date: Date, base?: BaseRota | null): ShiftKind {
+  const entry = resolveBaseRota(base)[toDateKey(date)];
   return entry?.kind ?? "off";
 }
 
@@ -90,28 +103,37 @@ export function makeDefaultRotaEntry(dateKey: string, kind: "day" | "night"): Ro
   };
 }
 
-export function getRotaEntry(date: Date, overrides?: RotaOverrides): RotaEntry | undefined {
+export function getRotaEntry(
+  date: Date,
+  overrides?: RotaOverrides,
+  base?: BaseRota | null,
+): RotaEntry | undefined {
   const key = toDateKey(date);
+  const map = resolveBaseRota(base);
   const override = overrides?.[key];
   if (override) {
     if (override.kind === "off") return undefined;
-    const base = ROTA_BY_DATE[key];
-    if (base && base.kind === override.kind) return base;
+    const fromBase = map[key];
+    if (fromBase && fromBase.kind === override.kind) return fromBase;
     return makeDefaultRotaEntry(key, override.kind);
   }
-  return ROTA_BY_DATE[key];
+  return map[key];
 }
 
 /** Legacy helper — CSV schedule is not a fixed 7-day cycle. */
-export function getCycleDay(date: Date, overrides?: RotaOverrides): number {
-  const entry = getRotaEntry(date, overrides);
+export function getCycleDay(date: Date, overrides?: RotaOverrides, base?: BaseRota | null): number {
+  const entry = getRotaEntry(date, overrides, base);
   if (!entry) return 4;
   return entry.kind === "day" ? 0 : 2;
 }
 
-export function getShiftForDate(date: Date, overrides?: RotaOverrides): ShiftDay {
+export function getShiftForDate(
+  date: Date,
+  overrides?: RotaOverrides,
+  base?: BaseRota | null,
+): ShiftDay {
   const day = startOfLocalDay(date);
-  const entry = getRotaEntry(day, overrides);
+  const entry = getRotaEntry(day, overrides, base);
   const overridden = isRotaOverridden(day, overrides);
 
   if (!entry) {
@@ -160,8 +182,12 @@ export function formatShiftTime(shift: ShiftDay): string {
   return "Rest day";
 }
 
-export function getShiftStart(date: Date, overrides?: RotaOverrides): Date | null {
-  const shift = getShiftForDate(date, overrides);
+export function getShiftStart(
+  date: Date,
+  overrides?: RotaOverrides,
+  base?: BaseRota | null,
+): Date | null {
+  const shift = getShiftForDate(date, overrides, base);
   if (shift.kind === "off" || shift.startHour === null) return null;
   const start = startOfLocalDay(date);
   const [h, m] = (shift.entry?.start ?? `${shift.startHour}:00`).split(":").map(Number);
@@ -169,8 +195,12 @@ export function getShiftStart(date: Date, overrides?: RotaOverrides): Date | nul
   return start;
 }
 
-export function getShiftEnd(date: Date, overrides?: RotaOverrides): Date | null {
-  const shift = getShiftForDate(date, overrides);
+export function getShiftEnd(
+  date: Date,
+  overrides?: RotaOverrides,
+  base?: BaseRota | null,
+): Date | null {
+  const shift = getShiftForDate(date, overrides, base);
   if (shift.kind === "off") return null;
   const day = startOfLocalDay(date);
   if (shift.kind === "day") {
@@ -185,8 +215,9 @@ export function getWakeTime(
   leadMinutes: number,
   wakeTimeOverride?: string | null,
   rotaOverrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): Date | null {
-  const entry = getRotaEntry(date, rotaOverrides);
+  const entry = getRotaEntry(date, rotaOverrides, base);
   if (!entry && !wakeTimeOverride) return null;
 
   const csvWake =
@@ -205,7 +236,7 @@ export function getWakeTime(
     return wake;
   }
 
-  const start = getShiftStart(date, rotaOverrides);
+  const start = getShiftStart(date, rotaOverrides, base);
   if (!start) return null;
   return new Date(start.getTime() - leadMinutes * 60 * 1000);
 }
@@ -213,6 +244,7 @@ export function getWakeTime(
 export function getPrepTimes(
   date: Date,
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): {
   dogFeed: string | null;
   getDressed: string | null;
@@ -220,7 +252,7 @@ export function getPrepTimes(
   targetArrival: string | null;
   previousDayWarnings: string[];
 } | null {
-  const entry = getRotaEntry(date, overrides);
+  const entry = getRotaEntry(date, overrides, base);
   if (!entry) return null;
   return {
     dogFeed: entry.kind === "day" ? entry.morningDogFeed : entry.afternoonDogFeed,
@@ -235,11 +267,12 @@ export function getMonthShifts(
   year: number,
   month: number,
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): ShiftDay[] {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const out: ShiftDay[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
-    out.push(getShiftForDate(new Date(year, month, d), overrides));
+    out.push(getShiftForDate(new Date(year, month, d), overrides, base));
   }
   return out;
 }
@@ -248,12 +281,13 @@ export function getUpcomingShifts(
   from: Date,
   count: number,
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): ShiftDay[] {
   const out: ShiftDay[] = [];
   let cursor = startOfLocalDay(from);
   let guard = 0;
   while (out.length < count && guard < 400) {
-    const shift = getShiftForDate(cursor, overrides);
+    const shift = getShiftForDate(cursor, overrides, base);
     if (shift.kind !== "off") out.push(shift);
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
     guard++;
@@ -264,14 +298,15 @@ export function getUpcomingShifts(
 export function getNextWorkingShift(
   from: Date = new Date(),
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): ShiftDay | null {
   const now = from;
   let cursor = startOfLocalDay(now);
   for (let i = 0; i < 20; i++) {
-    const shift = getShiftForDate(cursor, overrides);
+    const shift = getShiftForDate(cursor, overrides, base);
     if (shift.kind !== "off") {
-      const start = getShiftStart(cursor, overrides);
-      const end = getShiftEnd(cursor, overrides);
+      const start = getShiftStart(cursor, overrides, base);
+      const end = getShiftEnd(cursor, overrides, base);
       if (start && start.getTime() > now.getTime()) return shift;
       if (i === 0 && start && end && now.getTime() < end.getTime()) return shift;
     }
@@ -292,6 +327,7 @@ export function countWorkDaysInRange(
   start: Date,
   end: Date,
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): { days: number; nights: number; off: number; hours: number } {
   let days = 0;
   let nights = 0;
@@ -300,7 +336,7 @@ export function countWorkDaysInRange(
   const cursor = startOfLocalDay(start);
   const last = startOfLocalDay(end);
   while (cursor.getTime() <= last.getTime()) {
-    const s = getShiftForDate(cursor, overrides);
+    const s = getShiftForDate(cursor, overrides, base);
     if (s.kind === "day") {
       days++;
       hours += s.hours;
@@ -351,12 +387,13 @@ export function getReminderDates(
   from: Date,
   aheadDays = 60,
   overrides?: RotaOverrides,
+  base?: BaseRota | null,
 ): Date[] {
   const dates: Date[] = [];
   let cursor = startOfLocalDay(from);
   for (let i = 0; i < aheadDays; i++) {
     const tomorrow = addDays(cursor, 1);
-    const shift = getShiftForDate(tomorrow, overrides);
+    const shift = getShiftForDate(tomorrow, overrides, base);
     if (shift.kind !== "off") dates.push(new Date(cursor));
     cursor = addDays(cursor, 1);
   }
@@ -364,16 +401,17 @@ export function getReminderDates(
 }
 
 /**
- * If `kind` matches the CSV, clear the override; otherwise store it.
+ * If `kind` matches the CSV/base, clear the override; otherwise store it.
  * Returns the next overrides map (does not mutate).
  */
 export function applyRotaKind(
   overrides: RotaOverrides,
   date: Date,
   kind: ShiftKind,
+  base?: BaseRota | null,
 ): RotaOverrides {
   const key = toDateKey(date);
-  const csv = getCsvKind(date);
+  const csv = getCsvKind(date, base);
   const next = { ...overrides };
   if (kind === csv) {
     delete next[key];

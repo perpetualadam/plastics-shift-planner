@@ -14,12 +14,16 @@ export function AlarmsView() {
   const { data, updateSettings } = useAppData();
   const [status, setStatus] = useState<string>("");
   const upcoming = useMemo(
-    () => buildSchedule(data.settings, new Date(), data.rotaOverrides).slice(0, 12),
-    [data.settings, data.rotaOverrides],
+    () =>
+      buildSchedule(data.settings, new Date(), data.rotaOverrides, data.customRota?.byDate).slice(
+        0,
+        12,
+      ),
+    [data.settings, data.rotaOverrides, data.customRota],
   );
   const next = useMemo(
-    () => nextEventSummary(data.settings, data.rotaOverrides),
-    [data.settings, data.rotaOverrides],
+    () => nextEventSummary(data.settings, data.rotaOverrides, data.customRota?.byDate),
+    [data.settings, data.rotaOverrides, data.customRota],
   );
 
   const toggleReminderTime = (time: string) => {

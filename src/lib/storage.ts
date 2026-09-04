@@ -1,3 +1,4 @@
+import type { RotaEntry } from "./rotaData";
 import { toDateKey } from "./rota";
 
 export type AlarmSoundId =
@@ -122,6 +123,13 @@ export function monthKeyFromParts(year: number, month: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
+/** User-uploaded CSV schedule that replaces the baked-in rota as the base. */
+export type CustomRota = {
+  fileName: string;
+  uploadedAt: string;
+  byDate: Record<string, RotaEntry>;
+};
+
 export type AppData = {
   settings: AppSettings;
   overtime: OvertimeEntry[];
@@ -131,6 +139,8 @@ export type AppData = {
   attendanceBonusLosses: AttendanceBonusLoss[];
   /** Local edits on top of the CSV rota, keyed by YYYY-MM-DD. */
   rotaOverrides: RotaOverrides;
+  /** When set, replaces the built-in CSV as the schedule source. */
+  customRota: CustomRota | null;
   notificationPermissionAsked: boolean;
   installedHintDismissed: boolean;
 };
@@ -220,6 +230,40 @@ function normalizeRotaOverrides(raw: unknown): RotaOverrides {
   return out;
 }
 
+function normalizeCustomRota(raw: unknown): CustomRota | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Partial<CustomRota>;
+  if (!obj.byDate || typeof obj.byDate !== "object") return null;
+  const byDate: Record<string, RotaEntry> = {};
+  for (const [key, value] of Object.entries(obj.byDate as Record<string, unknown>)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+    if (!value || typeof value !== "object") continue;
+    const e = value as Partial<RotaEntry>;
+    if (e.kind !== "day" && e.kind !== "night") continue;
+    byDate[key] = {
+      date: key,
+      kind: e.kind,
+      start: typeof e.start === "string" ? e.start : e.kind === "day" ? "06:00" : "18:00",
+      end: typeof e.end === "string" ? e.end : e.kind === "day" ? "18:00" : "06:00",
+      previousDayWarnings: Array.isArray(e.previousDayWarnings)
+        ? e.previousDayWarnings.filter((t): t is string => typeof t === "string")
+        : ["17:00", "20:00"],
+      morningDogFeed: typeof e.morningDogFeed === "string" ? e.morningDogFeed : null,
+      afternoonDogFeed: typeof e.afternoonDogFeed === "string" ? e.afternoonDogFeed : null,
+      getDressed: typeof e.getDressed === "string" ? e.getDressed : null,
+      leaveForWork: typeof e.leaveForWork === "string" ? e.leaveForWork : null,
+      targetArrival: typeof e.targetArrival === "string" ? e.targetArrival : null,
+    };
+  }
+  if (Object.keys(byDate).length === 0) return null;
+  return {
+    fileName: typeof obj.fileName === "string" ? obj.fileName : "uploaded.csv",
+    uploadedAt:
+      typeof obj.uploadedAt === "string" ? obj.uploadedAt : new Date().toISOString(),
+    byDate,
+  };
+}
+
 function emptyData(): AppData {
   return {
     settings: DEFAULT_SETTINGS,
@@ -229,6 +273,7 @@ function emptyData(): AppData {
     extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
     attendanceBonusLosses: [],
     rotaOverrides: {},
+    customRota: null,
     notificationPermissionAsked: false,
     installedHintDismissed: false,
   };
@@ -270,6 +315,7 @@ function normalizeData(parsed: Partial<AppData>): AppData {
     extraWork,
     attendanceBonusLosses: losses,
     rotaOverrides: normalizeRotaOverrides(parsed.rotaOverrides),
+    customRota: normalizeCustomRota(parsed.customRota),
     notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
     installedHintDismissed: parsed.installedHintDismissed ?? false,
   };

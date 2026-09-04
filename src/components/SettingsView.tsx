@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { paidHoursFromBreak } from "@/lib/pay";
+import { parseShiftCsv, ShiftCsvParseError } from "@/lib/parseShiftCsv";
 import {
   DEFAULT_EXTRA_WORK,
   DEFAULT_SETTINGS,
@@ -98,10 +99,14 @@ export function SettingsView() {
     upsertExtraWork,
     removeExtraWork,
     clearAllRotaOverrides,
+    setCustomRota,
   } = useAppData();
   const fileRef = useRef<HTMLInputElement>(null);
+  const csvRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState("");
   const overrideCount = Object.keys(data.rotaOverrides ?? {}).length;
+  const custom = data.customRota;
+  const customCount = custom ? Object.keys(custom.byDate).length : 0;
 
   const downloadBackup = () => {
     const blob = new Blob([exportBackup(data)], { type: "application/json" });
@@ -156,6 +161,74 @@ export function SettingsView() {
           <strong>Thu 20 Aug 2026</strong> (day 06:00–18:00). Earlier CSV rota days do not count
           for pay. Induction / training below still counts as an extra payable day.
         </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Shift CSV</h2>
+        </div>
+        <p className="help">
+          When your rota changes, upload a new Plastics schedule CSV. It replaces the built-in
+          schedule on this device (same columns as the official file). Day edits are cleared so the
+          new file is the source of truth.
+        </p>
+        {custom ? (
+          <p className="help">
+            Using uploaded <strong>{custom.fileName}</strong> · {customCount} working days ·{" "}
+            {new Date(custom.uploadedAt).toLocaleString()}
+          </p>
+        ) : (
+          <p className="help">Using built-in B-shift 2026 CSV.</p>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn btn-primary" onClick={() => csvRef.current?.click()}>
+            Upload CSV
+          </button>
+          {custom && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                if (!confirm("Remove uploaded CSV and restore the built-in B-shift schedule?"))
+                  return;
+                setCustomRota(null);
+                setMsg("Restored built-in CSV schedule.");
+              }}
+            >
+              Restore built-in CSV
+            </button>
+          )}
+          <input
+            ref={csvRef}
+            type="file"
+            accept=".csv,text/csv"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const text = await file.text();
+                const parsed = parseShiftCsv(text);
+                setCustomRota({
+                  fileName: file.name || "rota.csv",
+                  uploadedAt: new Date().toISOString(),
+                  byDate: parsed.byDate,
+                });
+                setMsg(
+                  `Loaded ${parsed.dates.length} working days from ${file.name || "CSV"}.`,
+                );
+              } catch (err) {
+                const detail =
+                  err instanceof ShiftCsvParseError
+                    ? err.message
+                    : "Could not read that CSV file.";
+                setMsg(detail);
+              }
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {msg && <p className="help">{msg}</p>}
       </section>
 
       <section className="panel">
@@ -436,6 +509,7 @@ export function SettingsView() {
               extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
               attendanceBonusLosses: [],
               rotaOverrides: {},
+              customRota: null,
               notificationPermissionAsked: false,
               installedHintDismissed: false,
             };
@@ -450,8 +524,9 @@ export function SettingsView() {
       <section className="panel about">
         <h2>Plastics Shift</h2>
         <p>
-          Personal B-shift planner — offline-first PWA. Schedule from your 2026 Plastics CSV rota
-          with editable days, rates, hours, breaks, and first paid-shift date.
+          Personal B-shift planner — offline-first PWA. Schedule from your Plastics CSV rota
+          (built-in or uploaded), with editable days, rates, hours, breaks, and first paid-shift
+          date.
         </p>
         <p className="fineprint">v0.1 · data stays on your phone</p>
       </section>

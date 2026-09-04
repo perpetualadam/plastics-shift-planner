@@ -52,6 +52,13 @@ export type DayNote = {
   text: string;
 };
 
+/** Per-day override of the baked CSV rota (day / night / off). */
+export type RotaOverride = {
+  kind: "day" | "night" | "off";
+};
+
+export type RotaOverrides = Record<string, RotaOverride>;
+
 export type PayAdjustment = {
   id: string;
   dateKey: string;
@@ -122,6 +129,8 @@ export type AppData = {
   adjustments: PayAdjustment[];
   extraWork: ExtraWorkEntry[];
   attendanceBonusLosses: AttendanceBonusLoss[];
+  /** Local edits on top of the CSV rota, keyed by YYYY-MM-DD. */
+  rotaOverrides: RotaOverrides;
   notificationPermissionAsked: boolean;
   installedHintDismissed: boolean;
 };
@@ -193,6 +202,24 @@ export function extraWorkPaidHours(entry: ExtraWorkEntry): number {
   return extraWorkClockHours(entry);
 }
 
+function normalizeRotaOverrides(raw: unknown): RotaOverrides {
+  if (!raw || typeof raw !== "object") return {};
+  const out: RotaOverrides = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+    const kind =
+      value && typeof value === "object" && "kind" in value
+        ? (value as { kind?: string }).kind
+        : typeof value === "string"
+          ? value
+          : null;
+    if (kind === "day" || kind === "night" || kind === "off") {
+      out[key] = { kind };
+    }
+  }
+  return out;
+}
+
 function emptyData(): AppData {
   return {
     settings: DEFAULT_SETTINGS,
@@ -201,6 +228,7 @@ function emptyData(): AppData {
     adjustments: [],
     extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
     attendanceBonusLosses: [],
+    rotaOverrides: {},
     notificationPermissionAsked: false,
     installedHintDismissed: false,
   };
@@ -241,6 +269,7 @@ function normalizeData(parsed: Partial<AppData>): AppData {
     adjustments: parsed.adjustments ?? [],
     extraWork,
     attendanceBonusLosses: losses,
+    rotaOverrides: normalizeRotaOverrides(parsed.rotaOverrides),
     notificationPermissionAsked: parsed.notificationPermissionAsked ?? false,
     installedHintDismissed: parsed.installedHintDismissed ?? false,
   };

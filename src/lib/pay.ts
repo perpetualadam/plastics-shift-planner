@@ -190,7 +190,7 @@ export function calculatePay(
 
   const range = clampRangeToWorkStart(settings, start, end);
   const counts = range
-    ? countWorkDaysInRange(range.start, range.end)
+    ? countWorkDaysInRange(range.start, range.end, data.rotaOverrides)
     : { days: 0, nights: 0, off: 0, hours: 0 };
 
   const shifts = counts.days + counts.nights;
@@ -369,7 +369,7 @@ export function workedDaysInMonth(
   const endKey = toDateKey(end);
 
   while (cursor.getTime() <= last.getTime()) {
-    const shift = getShiftForDate(cursor);
+    const shift = getShiftForDate(cursor, data.rotaOverrides);
     if (shift.kind !== "off") {
       const key = toDateKey(cursor);
       const countsForPay = !workStartKey || key >= workStartKey;
@@ -424,7 +424,14 @@ export function yearToDatePay(data: AppData, asOf: Date = new Date()): PayBreakd
 
 export function estimatedAnnual(data: AppData): number {
   const startKey = data.settings.workStartDate || "";
-  const workDays = ROTA_DATES.filter((d) => !startKey || d >= startKey).length;
+  const overrides = data.rotaOverrides ?? {};
+  const workKeys = new Set(ROTA_DATES.filter((d) => !startKey || d >= startKey));
+  for (const [key, ov] of Object.entries(overrides)) {
+    if (startKey && key < startKey) continue;
+    if (ov.kind === "off") workKeys.delete(key);
+    else workKeys.add(key);
+  }
+  const workDays = workKeys.size;
   const hoursPer = paidHoursPerShift(data.settings);
   const extraPaid = (data.extraWork ?? []).reduce((s, e) => s + extraWorkPaidHours(e), 0);
   const base = (workDays * hoursPer + extraPaid) * data.settings.hourlyRate;

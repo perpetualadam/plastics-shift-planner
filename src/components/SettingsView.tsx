@@ -91,9 +91,17 @@ function NumberField({
 }
 
 export function SettingsView() {
-  const { data, setData, updateSettings, upsertExtraWork, removeExtraWork } = useAppData();
+  const {
+    data,
+    setData,
+    updateSettings,
+    upsertExtraWork,
+    removeExtraWork,
+    clearAllRotaOverrides,
+  } = useAppData();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState("");
+  const overrideCount = Object.keys(data.rotaOverrides ?? {}).length;
 
   const downloadBackup = () => {
     const blob = new Blob([exportBackup(data)], { type: "application/json" });
@@ -400,6 +408,21 @@ export function SettingsView() {
         <div className="panel-head">
           <h2>Reset</h2>
         </div>
+        {overrideCount > 0 && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginBottom: 10 }}
+            onClick={() => {
+              if (!confirm(`Clear ${overrideCount} rota edit${overrideCount === 1 ? "" : "s"} and restore the CSV schedule?`))
+                return;
+              clearAllRotaOverrides();
+              setMsg("Rota edits cleared.");
+            }}
+          >
+            Clear rota edits ({overrideCount})
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-danger"
@@ -412,6 +435,7 @@ export function SettingsView() {
               adjustments: [],
               extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
               attendanceBonusLosses: [],
+              rotaOverrides: {},
               notificationPermissionAsked: false,
               installedHintDismissed: false,
             };
@@ -427,7 +451,7 @@ export function SettingsView() {
         <h2>Plastics Shift</h2>
         <p>
           Personal B-shift planner — offline-first PWA. Schedule from your 2026 Plastics CSV rota
-          with editable rates, hours, breaks, and first paid-shift date.
+          with editable days, rates, hours, breaks, and first paid-shift date.
         </p>
         <p className="fineprint">v0.1 · data stays on your phone</p>
       </section>

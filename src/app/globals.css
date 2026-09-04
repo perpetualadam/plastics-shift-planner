@@ -571,6 +571,11 @@ textarea {
   transform: scale(1.04);
 }
 
+.cal-cell.overridden .cal-tag {
+  color: var(--amber);
+  font-weight: 700;
+}
+
 .cal-num {
   font-weight: 700;
   font-size: 0.9rem;
@@ -601,6 +606,42 @@ textarea {
 
 .legend-item.kind-night {
   border-left-color: var(--night);
+}
+
+.legend-item.legend-edited {
+  border-left-color: var(--amber);
+}
+
+.rota-edit {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.rota-edit-label {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rota-kind-row {
+  margin-bottom: 8px;
+}
+
+.rota-edit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.rota-edit-meta .help {
+  flex: 1 1 160px;
+  margin: 0;
 }
 
 .detail h3 {

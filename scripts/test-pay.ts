@@ -26,6 +26,7 @@ const baseData: AppData = {
   adjustments: [],
   extraWork: DEFAULT_EXTRA_WORK.map((e) => ({ ...e })),
   attendanceBonusLosses: [],
+  rotaOverrides: {},
   notificationPermissionAsked: false,
   installedHintDismissed: false,
 };
@@ -226,5 +227,26 @@ const yearCmp = comparePeriodPay(
 );
 assert.ok(yearCmp.potential.total > yearCmp.actual.total);
 assert.ok(yearCmp.potential.attendanceBonusMonths >= 1);
+
+// Rota override: cancel 20 Aug day shift → scheduled days drop
+const overridden = calculateMonthPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+    rotaOverrides: { "2026-08-20": { kind: "off" } },
+  },
+  2026,
+  7,
+);
+const baselineAug = calculateMonthPay(
+  {
+    ...baseData,
+    settings: { ...DEFAULT_SETTINGS, hourlyRate: 10, workStartDate: "2026-08-20" },
+  },
+  2026,
+  7,
+);
+assert.equal(overridden.scheduledDays, baselineAug.scheduledDays - 1);
+assert.ok(overridden.paidHours < baselineAug.paidHours);
 
 console.log("pay tests passed");

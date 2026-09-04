@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  applyRotaKind,
   getShiftForDate,
   countWorkDaysInRange,
   getWakeTime,
@@ -63,5 +64,31 @@ for (const key of ROTA_DATES) {
   assert.equal(shift.kind, ROTA_BY_DATE[key].kind, key);
   assert.equal(toDateKey(shift.date), key);
 }
+
+// Local overrides: mark a CSV day as off, an off day as night, then reset
+const offDay = new Date(2026, 7, 20); // CSV day
+const restDay = new Date(2026, 7, 19); // CSV off
+let overrides = applyRotaKind({}, offDay, "off");
+assert.equal(getShiftForDate(offDay, overrides).kind, "off");
+assert.equal(getShiftForDate(offDay, overrides).overridden, true);
+assert.equal(getShiftForDate(offDay).kind, "day"); // CSV unchanged without map
+
+overrides = applyRotaKind(overrides, restDay, "night");
+assert.equal(getShiftForDate(restDay, overrides).kind, "night");
+assert.equal(getShiftForDate(restDay, overrides).entry?.start, "18:00");
+
+const rangeEdited = countWorkDaysInRange(
+  new Date(2026, 7, 19),
+  new Date(2026, 7, 20),
+  overrides,
+);
+assert.equal(rangeEdited.days, 0);
+assert.equal(rangeEdited.nights, 1);
+assert.equal(rangeEdited.off, 1);
+
+// Matching CSV clears the override entry
+overrides = applyRotaKind(overrides, offDay, "day");
+assert.equal(overrides["2026-08-20"], undefined);
+assert.equal(getShiftForDate(offDay, overrides).overridden, false);
 
 console.log("rota tests passed");

@@ -13,8 +13,14 @@ import { CSV_DEFAULT_WAKE, type AlarmSoundId } from "@/lib/storage";
 export function AlarmsView() {
   const { data, updateSettings } = useAppData();
   const [status, setStatus] = useState<string>("");
-  const upcoming = useMemo(() => buildSchedule(data.settings).slice(0, 12), [data.settings]);
-  const next = useMemo(() => nextEventSummary(data.settings), [data.settings]);
+  const upcoming = useMemo(
+    () => buildSchedule(data.settings, new Date(), data.rotaOverrides).slice(0, 12),
+    [data.settings, data.rotaOverrides],
+  );
+  const next = useMemo(
+    () => nextEventSummary(data.settings, data.rotaOverrides),
+    [data.settings, data.rotaOverrides],
+  );
 
   const toggleReminderTime = (time: string) => {
     const set = new Set(data.settings.reminderTimes);

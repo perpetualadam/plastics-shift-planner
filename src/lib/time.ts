@@ -76,3 +76,15 @@ export function nonEmptyString(value: unknown, fallback: string): string {
   const trimmed = value.trim();
   return trimmed || fallback;
 }
+
+/**
+ * Length-limit a live-edited label without trimming trailing spaces.
+ * `updateSettings` runs on every keystroke; a full `trim()` would drop the
+ * space before the next word ("Acme " → "Acme" → "AcmeF").
+ * Whitespace-only input becomes "".
+ */
+export function sanitizeLiveText(value: unknown, maxLen: number, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const sliced = value.slice(0, maxLen);
+  return sliced.trim() === "" ? "" : sliced;
+}

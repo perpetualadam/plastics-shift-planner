@@ -16,7 +16,48 @@ import {
   sanitizeShiftTemplate,
 } from "../src/lib/shiftConfig";
 import { hoursBetween, sanitizeHhmm } from "../src/lib/time";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../src/lib/storage";
+import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "../src/lib/storage";
+
+/** Mimic Settings keystroke updates: each char is saved through the sanitizer. */
+function typeSettingsField(
+  field: "plantName" | "shiftName",
+  text: string,
+  start = "",
+): string {
+  let current = start;
+  for (const ch of text) {
+    current = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      [field]: current + ch,
+    } as Partial<AppSettings>)[field];
+  }
+  return current;
+}
+
+function typeShiftLabel(text: string, start = ""): string {
+  let current = start;
+  for (const ch of text) {
+    current = sanitizeShiftTemplate(
+      { ...DEFAULT_DAY_SHIFT, label: current + ch },
+      DEFAULT_DAY_SHIFT,
+    ).label;
+  }
+  return current;
+}
+
+function typePrepLabel(text: string, start = ""): string {
+  let current = start;
+  for (const ch of text) {
+    current = sanitizeShiftTemplate(
+      {
+        ...DEFAULT_DAY_SHIFT,
+        prepSteps: [{ id: "dressed", label: current + ch, time: "04:54" }],
+      },
+      DEFAULT_DAY_SHIFT,
+    ).prepSteps[0].label;
+  }
+  return current;
+}
 
 assert.equal(hoursBetween("06:00", "18:00"), 12);
 assert.equal(hoursBetween("18:00", "06:00"), 12);
@@ -37,6 +78,19 @@ const cleaned = normalizeSettings({
 });
 assert.equal(cleaned.plantName, "");
 assert.equal(cleaned.shiftName, "");
+
+assert.equal(typeSettingsField("plantName", "Acme Foods"), "Acme Foods");
+assert.equal(typeSettingsField("shiftName", "B Shift"), "B Shift");
+assert.equal(normalizeSettings({ plantName: "Acme " }).plantName, "Acme ");
+assert.equal(typeShiftLabel("Day shift"), "Day shift");
+assert.equal(typePrepLabel("Get dressed"), "Get dressed");
+assert.equal(
+  sanitizeShiftTemplate(
+    { ...DEFAULT_DAY_SHIFT, prepSteps: [{ id: "x", label: "Get ", time: "04:54" }] },
+    DEFAULT_DAY_SHIFT,
+  ).prepSteps[0].label,
+  "Get ",
+);
 assert.equal(cleaned.hourlyRate, DEFAULT_SETTINGS.hourlyRate);
 assert.equal(cleaned.currency, "GBP");
 assert.deepEqual(cleaned.reminderTimes, ["07:30"]);

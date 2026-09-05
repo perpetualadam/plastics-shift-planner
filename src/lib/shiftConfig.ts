@@ -7,6 +7,7 @@ import {
   nonEmptyString,
   sanitizeCurrency,
   sanitizeHhmm,
+  sanitizeLiveText,
 } from "./time";
 
 export type RotaSource = "csv" | "cycle" | "manual";
@@ -134,7 +135,7 @@ function sanitizePrepSteps(raw: unknown, fallback: PrepStep[]): PrepStep[] {
     const rec = item as Partial<PrepStep>;
     const time = isValidHhmm(rec.time) ? sanitizeHhmm(rec.time) : "";
     if (!time) continue;
-    const label = typeof rec.label === "string" ? rec.label.trim().slice(0, 40) : "";
+    const label = sanitizeLiveText(rec.label, 40, "");
     const id =
       typeof rec.id === "string" && rec.id.trim()
         ? rec.id.trim().slice(0, 64)
@@ -160,7 +161,7 @@ export function sanitizeShiftTemplate(
   const end = sanitizeHhmm(rec.end, fallback.end);
   const wakeTime = sanitizeHhmm(rec.wakeTime, fallback.wakeTime);
   return {
-    label: nonEmptyString(rec.label, fallback.label).slice(0, 40),
+    label: sanitizeLiveText(rec.label, 40, fallback.label) || fallback.label,
     start,
     end,
     wakeTime,
@@ -212,4 +213,4 @@ export function nextKind(kind: ShiftKind): ShiftKind {
   return "day";
 }
 
-export { finiteNumber, sanitizeCurrency, sanitizeHhmm, nonEmptyString };
+export { finiteNumber, sanitizeCurrency, sanitizeHhmm, nonEmptyString, sanitizeLiveText };

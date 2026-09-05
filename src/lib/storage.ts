@@ -16,6 +16,7 @@ import {
   isValidHhmm,
   sanitizeCurrency,
   sanitizeHhmm,
+  sanitizeLiveText,
 } from "./time";
 
 export type { CycleConfig, PrepStep, RotaSource, ShiftTemplate } from "./shiftConfig";
@@ -286,14 +287,8 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
     remindersEnabled: incoming.remindersEnabled !== false,
     reminderTimes: sanitizeReminderTimes(incoming.reminderTimes),
     wakeAlarmsEnabled: incoming.wakeAlarmsEnabled !== false,
-    shiftName:
-      typeof incoming.shiftName === "string"
-        ? incoming.shiftName.trim().slice(0, 48)
-        : DEFAULT_SETTINGS.shiftName,
-    plantName:
-      typeof incoming.plantName === "string"
-        ? incoming.plantName.trim().slice(0, 48)
-        : DEFAULT_SETTINGS.plantName,
+    shiftName: sanitizeLiveText(incoming.shiftName, 48, DEFAULT_SETTINGS.shiftName),
+    plantName: sanitizeLiveText(incoming.plantName, 48, DEFAULT_SETTINGS.plantName),
     dayShift,
     nightShift,
     rotaSource: isRotaSource(incoming.rotaSource) ? incoming.rotaSource : "csv",

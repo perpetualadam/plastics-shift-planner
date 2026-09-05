@@ -1,12 +1,24 @@
 # Plastics Shift — B Shift Planner
 
-Personal offline-first PWA for **Plastics B Shift** (2026 rota).
+Personal offline-first PWA. Defaults to **Plastics B Shift** (2026 rota), but every workplace name, shift time, and calendar source is editable on device.
 
 ## Schedule source
 
-Working days and prep times come from the official CSV:
+Working days default to the official CSV:
 
 `data/b-shift-2026.csv` (also at `/data/b-shift-2026.csv` when deployed)
+
+In **Settings** you can:
+
+- Rename the company and shift
+- Change day and night start/end times (including overnight nights)
+- Edit the prep checklist (or remove dog-feed steps)
+- Switch the rota to a repeating pattern (2-2-3, 4-on-4-off, weekdays, custom) or a blank calendar you tap day-by-day
+- Edit pay rates, hours, breaks, and the attendance bonus
+
+Invalid values are ignored so the app keeps running.
+
+Default Plastics times:
 
 - **Day** · 06:00–18:00 · wake/prep from morning dog feed (04:49)  
 - **Night** · 18:00–06:00 · wake/prep from afternoon dog feed (16:49)  

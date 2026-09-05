@@ -6,7 +6,9 @@ import {
   formatShiftTime,
   formatShortDate,
   getPrepTimes,
+  getShiftEnd,
   getShiftForDate,
+  getShiftStart,
   getUpcomingShifts,
   getWakeTime,
   isSameDay,
@@ -30,23 +32,21 @@ function dateKeyFrom(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function findNextStart(today: ShiftDay, upcoming: ShiftDay[], now: Date) {
+function findNextStart(
+  today: ShiftDay,
+  upcoming: ShiftDay[],
+  now: Date,
+  overrides: Parameters<typeof getShiftStart>[1],
+  settings: Parameters<typeof getShiftStart>[2],
+) {
   const candidates = [today, ...upcoming].filter((s) => s.kind !== "off");
   for (const target of candidates) {
-    const start = new Date(target.date);
-    start.setHours(target.startHour ?? 0, 0, 0, 0);
+    const start = getShiftStart(target.date, overrides, settings);
+    if (!start) continue;
     if (start.getTime() > now.getTime()) return { shift: target, at: start };
     if (isSameDay(target.date, now)) {
-      const end =
-        target.kind === "day"
-          ? new Date(target.date.getFullYear(), target.date.getMonth(), target.date.getDate(), 18)
-          : new Date(
-              target.date.getFullYear(),
-              target.date.getMonth(),
-              target.date.getDate() + 1,
-              6,
-            );
-      if (now.getTime() < end.getTime()) return { shift: target, at: start };
+      const end = getShiftEnd(target.date, overrides, settings);
+      if (end && now.getTime() < end.getTime()) return { shift: target, at: start };
     }
   }
   return null;
@@ -65,12 +65,13 @@ export function TodayView() {
   }, []);
 
   const overrides = data.rotaOverrides;
-  const today = getShiftForDate(now, overrides);
+  const settings = data.settings;
+  const today = getShiftForDate(now, overrides, settings);
   const key = dateKeyFrom(now);
   const savedNote = data.notes.find((n) => n.dateKey === key)?.text ?? "";
   const note = noteDraft ?? savedNote;
 
-  const upcoming = getUpcomingShifts(now, 6, overrides);
+  const upcoming = getUpcomingShifts(now, 6, overrides, settings);
   const monthPay = calculateMonthPay(data, now.getFullYear(), now.getMonth());
 
   const wakeTarget = today.kind !== "off" ? today : upcoming[0];
@@ -78,16 +79,15 @@ export function TodayView() {
     ? getWakeTime(
         wakeTarget.date,
         wakeTarget.kind === "day"
-          ? data.settings.dayWakeLeadMinutes
-          : data.settings.nightWakeLeadMinutes,
-        wakeTarget.kind === "day"
-          ? data.settings.dayWakeTime
-          : data.settings.nightWakeTime,
+          ? settings.dayWakeLeadMinutes
+          : settings.nightWakeLeadMinutes,
+        wakeTarget.kind === "day" ? settings.dayWakeTime : settings.nightWakeTime,
         overrides,
+        settings,
       )
     : null;
 
-  const nextStart = findNextStart(today, upcoming, now);
+  const nextStart = findNextStart(today, upcoming, now, overrides, settings);
 
   return (
     <div className="stack">
@@ -113,14 +113,15 @@ export function TodayView() {
           </p>
         )}
         {(() => {
-          const prep = wakeTarget ? getPrepTimes(wakeTarget.date, overrides) : null;
-          if (!prep) return null;
+          const prep = wakeTarget ? getPrepTimes(wakeTarget.date, overrides, settings) : null;
+          if (!prep || prep.steps.length === 0) return null;
           return (
             <ul className="prep-list">
-              {prep.dogFeed && <li>Dog feed {prep.dogFeed}</li>}
-              {prep.getDressed && <li>Get dressed {prep.getDressed}</li>}
-              {prep.leaveForWork && <li>Leave {prep.leaveForWork}</li>}
-              {prep.targetArrival && <li>Arrive {prep.targetArrival}</li>}
+              {prep.steps.map((step) => (
+                <li key={step.id}>
+                  {step.label} {step.time}
+                </li>
+              ))}
             </ul>
           );
         })()}
@@ -143,7 +144,7 @@ export function TodayView() {
         </div>
         <div>
           <p className="stat-label">Est. pay</p>
-          <p className="stat-value money">{money(monthPay.total, data.settings.currency)}</p>
+          <p className="stat-value money">{money(monthPay.total, settings.currency)}</p>
         </div>
       </section>
 

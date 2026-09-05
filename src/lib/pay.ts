@@ -8,7 +8,7 @@ import {
 } from "./rota";
 import { ROTA_DATES } from "./rotaData";
 import {
-  ATTENDANCE_BONUS_AMOUNT,
+  attendanceBonusAmountOf,
   extraWorkClockHours,
   extraWorkPaidHours,
   hasActiveAttendanceBonusLoss,
@@ -166,7 +166,7 @@ export function attendanceBonusInRange(
       continue;
     }
     if (!hasActiveAttendanceBonusLoss(data, y, m)) {
-      amount += ATTENDANCE_BONUS_AMOUNT;
+      amount += attendanceBonusAmountOf(data.settings);
       months += 1;
     }
     cursor.setMonth(cursor.getMonth() + 1);
@@ -190,7 +190,7 @@ export function calculatePay(
 
   const range = clampRangeToWorkStart(settings, start, end);
   const counts = range
-    ? countWorkDaysInRange(range.start, range.end, data.rotaOverrides)
+    ? countWorkDaysInRange(range.start, range.end, data.rotaOverrides, settings)
     : { days: 0, nights: 0, off: 0, hours: 0 };
 
   const shifts = counts.days + counts.nights;
@@ -369,7 +369,7 @@ export function workedDaysInMonth(
   const endKey = toDateKey(end);
 
   while (cursor.getTime() <= last.getTime()) {
-    const shift = getShiftForDate(cursor, data.rotaOverrides);
+    const shift = getShiftForDate(cursor, data.rotaOverrides, data.settings);
     if (shift.kind !== "off") {
       const key = toDateKey(cursor);
       const countsForPay = !workStartKey || key >= workStartKey;
@@ -425,25 +425,28 @@ export function yearToDatePay(data: AppData, asOf: Date = new Date()): PayBreakd
 export function estimatedAnnual(data: AppData): number {
   const startKey = data.settings.workStartDate || "";
   const overrides = data.rotaOverrides ?? {};
-  const workKeys = new Set(ROTA_DATES.filter((d) => !startKey || d >= startKey));
-  for (const [key, ov] of Object.entries(overrides)) {
-    if (startKey && key < startKey) continue;
-    if (ov.kind === "off") workKeys.delete(key);
-    else workKeys.add(key);
-  }
-  const workDays = workKeys.size;
-  const hoursPer = paidHoursPerShift(data.settings);
+  const settings = data.settings;
+  const from = startKey
+    ? parseDateKey(startKey)
+    : ROTA_DATES.length > 0
+      ? parseDateKey(ROTA_DATES[0])
+      : new Date(new Date().getFullYear(), 0, 1);
+  const lastCsv = ROTA_DATES.length > 0 ? parseDateKey(ROTA_DATES[ROTA_DATES.length - 1]) : null;
+  const yearEnd = new Date(from.getFullYear(), 11, 31);
+  const to =
+    (settings.rotaSource ?? "csv") === "csv" && lastCsv && lastCsv.getTime() >= from.getTime()
+      ? lastCsv
+      : yearEnd;
+
+  const counts = countWorkDaysInRange(from, to, overrides, settings);
+  const workDays = counts.days + counts.nights;
+  const hoursPer = paidHoursPerShift(settings);
   const extraPaid = (data.extraWork ?? []).reduce((s, e) => s + extraWorkPaidHours(e), 0);
-  const base = (workDays * hoursPer + extraPaid) * data.settings.hourlyRate;
-  const nightsShare = 0.5;
-  const nightPrem = workDays * nightsShare * hoursPer * data.settings.nightPremium;
-  // Rough: £200 × remaining calendar months from work start through year end of rota span
+  const base = (workDays * hoursPer + extraPaid) * settings.hourlyRate;
+  const nightPrem = counts.nights * hoursPer * settings.nightPremium;
   let bonusMonths = 0;
-  if (ROTA_DATES.length > 0) {
-    const first = startKey || ROTA_DATES[0];
-    const last = ROTA_DATES[ROTA_DATES.length - 1];
-    const from = parseDateKey(first);
-    const to = parseDateKey(last);
+  const bonusEach = attendanceBonusAmountOf(settings);
+  if (bonusEach > 0 && from.getTime() <= to.getTime()) {
     const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
     const end = new Date(to.getFullYear(), to.getMonth(), 1);
     while (cursor.getTime() <= end.getTime()) {
@@ -453,7 +456,7 @@ export function estimatedAnnual(data: AppData): number {
       cursor.setMonth(cursor.getMonth() + 1);
     }
   }
-  return base + nightPrem + bonusMonths * ATTENDANCE_BONUS_AMOUNT;
+  return base + nightPrem + bonusMonths * bonusEach;
 }
 
 export function parseMonthKey(dateKey: string): { year: number; month: number } {

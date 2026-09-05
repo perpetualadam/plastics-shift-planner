@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import {
   cycleLegend,
   formatShiftTime,
-  getCsvKind,
+  getBaseKind,
   getMonthShifts,
   getShiftForDate,
   isSameDay,
+  rotaSourceLabel,
   toDateKey,
   type ShiftKind,
 } from "@/lib/rota";
@@ -23,6 +24,7 @@ const KIND_OPTIONS: { kind: ShiftKind; label: string }[] = [
 export function CalendarView() {
   const { data, setRotaKind, clearRotaOverride } = useAppData();
   const overrides = data.rotaOverrides ?? {};
+  const settings = data.settings;
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
@@ -32,11 +34,11 @@ export function CalendarView() {
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const shifts = useMemo(
-    () => getMonthShifts(year, month, overrides),
-    [year, month, overrides],
+    () => getMonthShifts(year, month, overrides, settings),
+    [year, month, overrides, settings],
   );
-  const selectedShift = getShiftForDate(selected, overrides);
-  const csvKind = getCsvKind(selected);
+  const selectedShift = getShiftForDate(selected, overrides, settings);
+  const baseKind = getBaseKind(selected, settings);
 
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Mon=0
   const blanks = Array.from({ length: firstDow });
@@ -106,7 +108,7 @@ export function CalendarView() {
         </div>
 
         <div className="legend">
-          {cycleLegend().map((item) => (
+          {cycleLegend(settings).map((item) => (
             <span key={item.kind} className={`legend-item kind-${item.kind}`}>
               {item.label}
             </span>
@@ -148,18 +150,22 @@ export function CalendarView() {
           {selectedShift.overridden ? (
             <div className="rota-edit-meta">
               <p className="help">
-                Edited from CSV ({csvKind === "off" ? "off" : csvKind}). Saved on this device.
+                Edited from {rotaSourceLabel(settings.rotaSource)} (
+                {baseKind === "off" ? "off" : baseKind}). Saved on this device.
               </p>
               <button
                 type="button"
                 className="btn btn-ghost"
                 onClick={() => clearRotaOverride(selected)}
               >
-                Reset to CSV
+                Reset day
               </button>
             </div>
           ) : (
-            <p className="help">Tap Day, Night, or Off to edit this date. Changes stay on this device.</p>
+            <p className="help">
+              Tap Day, Night, or Off to edit this date. Changes stay on this device and won&apos;t
+              break the rest of the rota.
+            </p>
           )}
         </div>
 

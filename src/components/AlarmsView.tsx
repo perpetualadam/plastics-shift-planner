@@ -8,27 +8,46 @@ import {
   nextEventSummary,
 } from "@/lib/notifications";
 import { SOUND_OPTIONS, playAlarmSound } from "@/lib/sounds";
+import {
+  DEFAULT_DAY_SHIFT,
+  DEFAULT_NIGHT_SHIFT,
+  wakeLeadFromTemplate,
+} from "@/lib/shiftConfig";
+import { isValidHhmm, sanitizeHhmm } from "@/lib/time";
 import { CSV_DEFAULT_WAKE, type AlarmSoundId } from "@/lib/storage";
 
 export function AlarmsView() {
   const { data, updateSettings } = useAppData();
   const [status, setStatus] = useState<string>("");
+  const [customReminder, setCustomReminder] = useState("19:00");
+  const settings = data.settings;
   const upcoming = useMemo(
-    () => buildSchedule(data.settings, new Date(), data.rotaOverrides).slice(0, 12),
-    [data.settings, data.rotaOverrides],
+    () => buildSchedule(settings, new Date(), data.rotaOverrides).slice(0, 12),
+    [settings, data.rotaOverrides],
   );
   const next = useMemo(
-    () => nextEventSummary(data.settings, data.rotaOverrides),
-    [data.settings, data.rotaOverrides],
+    () => nextEventSummary(settings, data.rotaOverrides),
+    [settings, data.rotaOverrides],
   );
 
   const toggleReminderTime = (time: string) => {
-    const set = new Set(data.settings.reminderTimes);
+    const set = new Set(settings.reminderTimes);
     if (set.has(time)) set.delete(time);
     else set.add(time);
     const sorted = Array.from(set).sort();
-    updateSettings({ reminderTimes: sorted.length ? sorted : ["17:00"] });
+    updateSettings({ reminderTimes: sorted.length ? sorted : [settings.reminderTimes[0] || "17:00"] });
   };
+
+  const addCustomReminder = () => {
+    if (!isValidHhmm(customReminder)) return;
+    const time = sanitizeHhmm(customReminder);
+    if (settings.reminderTimes.includes(time)) return;
+    updateSettings({ reminderTimes: [...settings.reminderTimes, time].sort() });
+  };
+
+  const reminderChips = Array.from(
+    new Set(["17:00", "20:00", "12:00", "21:00", ...settings.reminderTimes]),
+  ).sort();
 
   return (
     <div className="stack">
@@ -37,27 +56,40 @@ export function AlarmsView() {
           <h2>Reminders</h2>
         </div>
         <p className="help">
-          Day before a shift — default 5:00pm and 8:00pm so you can prep sleep and kit.
+          Day before a shift — pick any times so you can prep sleep and kit.
         </p>
         <label className="toggle">
           <input
             type="checkbox"
-            checked={data.settings.remindersEnabled}
+            checked={settings.remindersEnabled}
             onChange={(e) => updateSettings({ remindersEnabled: e.target.checked })}
           />
           <span>Enable day-before reminders</span>
         </label>
         <div className="chip-row">
-          {["17:00", "20:00", "12:00", "21:00"].map((t) => (
+          {reminderChips.map((t) => (
             <button
               key={t}
               type="button"
-              className={`chip ${data.settings.reminderTimes.includes(t) ? "on" : ""}`}
+              className={`chip ${settings.reminderTimes.includes(t) ? "on" : ""}`}
               onClick={() => toggleReminderTime(t)}
             >
               {t}
             </button>
           ))}
+        </div>
+        <div className="form-row wrap" style={{ marginTop: 12 }}>
+          <label>
+            Custom time
+            <input
+              type="time"
+              value={customReminder}
+              onChange={(e) => setCustomReminder(e.target.value)}
+            />
+          </label>
+          <button type="button" className="btn btn-ghost" onClick={addCustomReminder}>
+            Add time
+          </button>
         </div>
       </section>
 
@@ -66,45 +98,46 @@ export function AlarmsView() {
           <h2>Wake alarms</h2>
         </div>
         <p className="help">
-          Set your own wake times for day and night shifts. Defaults match the CSV (04:49 / 16:49).
+          Set wake times for {settings.dayShift.label.toLowerCase()} and{" "}
+          {settings.nightShift.label.toLowerCase()}. Defaults follow your shift start times.
         </p>
         <label className="toggle">
           <input
             type="checkbox"
-            checked={data.settings.wakeAlarmsEnabled}
+            checked={settings.wakeAlarmsEnabled}
             onChange={(e) => updateSettings({ wakeAlarmsEnabled: e.target.checked })}
           />
           <span>Enable wake-up alarms</span>
         </label>
         <div className="form-row wrap">
           <label>
-            Day shift wake
+            {settings.dayShift.label} wake
             <input
               type="time"
-              value={data.settings.dayWakeTime || "04:49"}
+              value={settings.dayWakeTime || settings.dayShift.wakeTime}
               onChange={(e) => {
-                const dayWakeTime = e.target.value || "04:49";
-                const [h, m] = dayWakeTime.split(":").map(Number);
-                const lead = 6 * 60 - (h * 60 + m);
+                const dayWakeTime = e.target.value || settings.dayShift.wakeTime;
+                const dayShift = { ...settings.dayShift, wakeTime: dayWakeTime };
                 updateSettings({
                   dayWakeTime,
-                  dayWakeLeadMinutes: lead > 0 ? lead : data.settings.dayWakeLeadMinutes,
+                  dayShift,
+                  dayWakeLeadMinutes: wakeLeadFromTemplate(dayShift),
                 });
               }}
             />
           </label>
           <label>
-            Night shift wake
+            {settings.nightShift.label} wake
             <input
               type="time"
-              value={data.settings.nightWakeTime || "16:49"}
+              value={settings.nightWakeTime || settings.nightShift.wakeTime}
               onChange={(e) => {
-                const nightWakeTime = e.target.value || "16:49";
-                const [h, m] = nightWakeTime.split(":").map(Number);
-                const lead = 18 * 60 - (h * 60 + m);
+                const nightWakeTime = e.target.value || settings.nightShift.wakeTime;
+                const nightShift = { ...settings.nightShift, wakeTime: nightWakeTime };
                 updateSettings({
                   nightWakeTime,
-                  nightWakeLeadMinutes: lead > 0 ? lead : data.settings.nightWakeLeadMinutes,
+                  nightShift,
+                  nightWakeLeadMinutes: wakeLeadFromTemplate(nightShift),
                 });
               }}
             />
@@ -114,21 +147,31 @@ export function AlarmsView() {
           <button
             type="button"
             className="chip"
-            onClick={() =>
+            onClick={() => {
+              const dayShift = {
+                ...settings.dayShift,
+                wakeTime: DEFAULT_DAY_SHIFT.wakeTime,
+              };
+              const nightShift = {
+                ...settings.nightShift,
+                wakeTime: DEFAULT_NIGHT_SHIFT.wakeTime,
+              };
               updateSettings({
                 dayWakeTime: CSV_DEFAULT_WAKE.day,
                 nightWakeTime: CSV_DEFAULT_WAKE.night,
-                dayWakeLeadMinutes: 71,
-                nightWakeLeadMinutes: 71,
-              })
-            }
+                dayShift,
+                nightShift,
+                dayWakeLeadMinutes: wakeLeadFromTemplate(dayShift),
+                nightWakeLeadMinutes: wakeLeadFromTemplate(nightShift),
+              });
+            }}
           >
-            Reset to CSV defaults
+            Reset wake defaults
           </button>
         </div>
         <p className="help">
-          Day shift starts 06:00 · Night shift starts 18:00. Changing these times updates upcoming
-          wake alerts immediately.
+          {settings.dayShift.label} starts {settings.dayShift.start} · {settings.nightShift.label}{" "}
+          starts {settings.nightShift.start}. Change start times in Settings → Shift times.
         </p>
       </section>
 
@@ -141,7 +184,7 @@ export function AlarmsView() {
             <button
               key={s.id}
               type="button"
-              className={`sound-card ${data.settings.alarmSound === s.id ? "on" : ""}`}
+              className={`sound-card ${settings.alarmSound === s.id ? "on" : ""}`}
               onClick={() => updateSettings({ alarmSound: s.id })}
             >
               <strong>{s.label}</strong>
@@ -156,7 +199,7 @@ export function AlarmsView() {
             min={0.2}
             max={1}
             step={0.05}
-            value={data.settings.alarmVolume}
+            value={settings.alarmVolume}
             onChange={(e) => updateSettings({ alarmVolume: Number(e.target.value) })}
           />
         </label>
@@ -165,8 +208,8 @@ export function AlarmsView() {
           className="btn btn-primary"
           onClick={async () => {
             await playAlarmSound(
-              data.settings.alarmSound as AlarmSoundId,
-              data.settings.alarmVolume,
+              settings.alarmSound as AlarmSoundId,
+              settings.alarmVolume,
               1,
             );
           }}

@@ -1,4 +1,25 @@
 import { toDateKey } from "./rota";
+import {
+  DEFAULT_CYCLE,
+  DEFAULT_DAY_SHIFT,
+  DEFAULT_NIGHT_SHIFT,
+  isRotaSource,
+  sanitizeCycle,
+  sanitizeShiftTemplate,
+  type CycleConfig,
+  type RotaSource,
+  type ShiftTemplate,
+} from "./shiftConfig";
+import {
+  finiteNumber,
+  hoursBetween as clockHoursBetween,
+  isValidHhmm,
+  sanitizeCurrency,
+  sanitizeHhmm,
+  sanitizeLiveText,
+} from "./time";
+
+export type { CycleConfig, PrepStep, RotaSource, ShiftTemplate } from "./shiftConfig";
 
 export type AlarmSoundId =
   | "pulse"
@@ -16,12 +37,12 @@ export type AppSettings = {
   wakeLeadMinutes: number;
   dayWakeLeadMinutes: number;
   nightWakeLeadMinutes: number;
-  /** Editable wake clock times (HH:MM). Defaults match CSV dog-feed alarms. */
+  /** Editable wake clock times (HH:MM). Kept in sync with day/night templates. */
   dayWakeTime: string;
   nightWakeTime: string;
-  /** First B-shift rota day that counts for pay (CSV; default 2026-08-20). */
+  /** First rota day that counts for pay (YYYY-MM-DD). */
   workStartDate: string;
-  /** Clock hours on site per shift (usually 12). */
+  /** Clock hours on site per shift (fallback when template times are invalid). */
   shiftClockHours: number;
   /** Hours paid per shift (editable; unpaid break = clock − paid). */
   paidHoursPerShift: number;
@@ -36,6 +57,16 @@ export type AppSettings = {
   wakeAlarmsEnabled: boolean;
   shiftName: string;
   plantName: string;
+  /** Day-shift times, label, and prep checklist. */
+  dayShift: ShiftTemplate;
+  /** Night-shift times, label, and prep checklist. */
+  nightShift: ShiftTemplate;
+  /** Which calendar fills working days: baked CSV, repeating cycle, or blank. */
+  rotaSource: RotaSource;
+  cycle: CycleConfig;
+  /** Monthly attendance bonus. Set amount to 0 or disable if your workplace has none. */
+  attendanceBonusEnabled: boolean;
+  attendanceBonusAmount: number;
 };
 
 export type OvertimeEntry = {
@@ -101,8 +132,17 @@ export type AttendanceBonusLoss = {
   createdAt: string;
 };
 
-/** Fixed monthly attendance bonus (GBP). */
+/** Default monthly attendance bonus when settings omit an amount. */
 export const ATTENDANCE_BONUS_AMOUNT = 200;
+
+const ALARM_SOUNDS: AlarmSoundId[] = [
+  "pulse",
+  "radar",
+  "chime",
+  "buzzer",
+  "gentle",
+  "siren",
+];
 
 export const ATTENDANCE_BONUS_REASON_OPTIONS: {
   id: AttendanceBonusLossReason;
@@ -157,7 +197,132 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wakeAlarmsEnabled: true,
   shiftName: "B Shift",
   plantName: "Plastics",
+  dayShift: {
+    ...DEFAULT_DAY_SHIFT,
+    prepSteps: DEFAULT_DAY_SHIFT.prepSteps.map((s) => ({ ...s })),
+  },
+  nightShift: {
+    ...DEFAULT_NIGHT_SHIFT,
+    prepSteps: DEFAULT_NIGHT_SHIFT.prepSteps.map((s) => ({ ...s })),
+  },
+  rotaSource: "csv",
+  cycle: { ...DEFAULT_CYCLE, sequence: [...DEFAULT_CYCLE.sequence] },
+  attendanceBonusEnabled: true,
+  attendanceBonusAmount: ATTENDANCE_BONUS_AMOUNT,
 };
+
+function cloneTemplate(template: ShiftTemplate): ShiftTemplate {
+  return { ...template, prepSteps: template.prepSteps.map((s) => ({ ...s })) };
+}
+
+function sanitizeReminderTimes(raw: unknown): string[] {
+  const source = Array.isArray(raw) ? raw : DEFAULT_SETTINGS.reminderTimes;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of source) {
+    if (!isValidHhmm(item)) continue;
+    const time = sanitizeHhmm(item);
+    if (seen.has(time)) continue;
+    seen.add(time);
+    out.push(time);
+    if (out.length >= 8) break;
+  }
+  return out.length > 0 ? out.sort() : [...DEFAULT_SETTINGS.reminderTimes];
+}
+
+function sanitizeWorkStartDate(value: unknown): string {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return DEFAULT_SETTINGS.workStartDate;
+}
+
+export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSettings {
+  const incoming = raw && typeof raw === "object" ? raw : {};
+  const dayShift = sanitizeShiftTemplate(incoming.dayShift, DEFAULT_DAY_SHIFT);
+  const nightShift = sanitizeShiftTemplate(incoming.nightShift, DEFAULT_NIGHT_SHIFT);
+
+  const dayWakeTime = isValidHhmm(incoming.dayWakeTime)
+    ? sanitizeHhmm(incoming.dayWakeTime)
+    : dayShift.wakeTime;
+  const nightWakeTime = isValidHhmm(incoming.nightWakeTime)
+    ? sanitizeHhmm(incoming.nightWakeTime)
+    : nightShift.wakeTime;
+
+  dayShift.wakeTime = dayWakeTime;
+  nightShift.wakeTime = nightWakeTime;
+
+  const alarmSound = ALARM_SOUNDS.includes(incoming.alarmSound as AlarmSoundId)
+    ? (incoming.alarmSound as AlarmSoundId)
+    : DEFAULT_SETTINGS.alarmSound;
+
+  const shiftClockHours = finiteNumber(incoming.shiftClockHours, 12, 0.25, 24);
+  const paidHoursPerShift = finiteNumber(
+    incoming.paidHoursPerShift,
+    DEFAULT_SETTINGS.paidHoursPerShift,
+    0,
+    24,
+  );
+
+  return {
+    hourlyRate: finiteNumber(incoming.hourlyRate, DEFAULT_SETTINGS.hourlyRate, 0, 10_000),
+    overtimeMultiplier: finiteNumber(
+      incoming.overtimeMultiplier,
+      DEFAULT_SETTINGS.overtimeMultiplier,
+      1,
+      10,
+    ),
+    nightPremium: finiteNumber(incoming.nightPremium, DEFAULT_SETTINGS.nightPremium, 0, 10_000),
+    currency: sanitizeCurrency(incoming.currency, DEFAULT_SETTINGS.currency),
+    wakeLeadMinutes: finiteNumber(incoming.wakeLeadMinutes, 71, 0, 24 * 60),
+    dayWakeLeadMinutes: finiteNumber(incoming.dayWakeLeadMinutes, 71, 0, 24 * 60),
+    nightWakeLeadMinutes: finiteNumber(incoming.nightWakeLeadMinutes, 71, 0, 24 * 60),
+    dayWakeTime,
+    nightWakeTime,
+    workStartDate: sanitizeWorkStartDate(incoming.workStartDate),
+    shiftClockHours,
+    paidHoursPerShift: Math.min(paidHoursPerShift, shiftClockHours),
+    breakMinutes: finiteNumber(incoming.breakMinutes, 30, 0, 240),
+    breakPaid: incoming.breakPaid === true,
+    alarmSound,
+    alarmVolume: finiteNumber(incoming.alarmVolume, 0.85, 0.05, 1),
+    remindersEnabled: incoming.remindersEnabled !== false,
+    reminderTimes: sanitizeReminderTimes(incoming.reminderTimes),
+    wakeAlarmsEnabled: incoming.wakeAlarmsEnabled !== false,
+    shiftName: sanitizeLiveText(incoming.shiftName, 48, DEFAULT_SETTINGS.shiftName),
+    plantName: sanitizeLiveText(incoming.plantName, 48, DEFAULT_SETTINGS.plantName),
+    dayShift,
+    nightShift,
+    rotaSource: isRotaSource(incoming.rotaSource) ? incoming.rotaSource : "csv",
+    cycle: sanitizeCycle(incoming.cycle),
+    attendanceBonusEnabled: incoming.attendanceBonusEnabled !== false,
+    attendanceBonusAmount: finiteNumber(
+      incoming.attendanceBonusAmount,
+      ATTENDANCE_BONUS_AMOUNT,
+      0,
+      100_000,
+    ),
+  };
+}
+
+export function attendanceBonusAmountOf(settings: {
+  attendanceBonusEnabled?: boolean;
+  attendanceBonusAmount?: number;
+}): number {
+  if (settings.attendanceBonusEnabled === false) return 0;
+  const n = Number(settings.attendanceBonusAmount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n;
+}
+
+export function cloneDefaultSettings(): AppSettings {
+  const s = normalizeSettings(DEFAULT_SETTINGS);
+  return {
+    ...s,
+    dayShift: cloneTemplate(s.dayShift),
+    nightShift: cloneTemplate(s.nightShift),
+    cycle: { ...s.cycle, sequence: [...s.cycle.sequence] },
+    reminderTimes: [...s.reminderTimes],
+  };
+}
 
 export const CSV_DEFAULT_WAKE = {
   day: "04:49",
@@ -182,10 +347,7 @@ export const DEFAULT_EXTRA_WORK: ExtraWorkEntry[] = [
 ];
 
 function hoursBetween(start: string, end: string): number {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  if (![sh, sm, eh, em].every(Number.isFinite)) return 0;
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+  return clockHoursBetween(start, end);
 }
 
 export function extraWorkClockHours(entry: ExtraWorkEntry): number {
@@ -222,7 +384,7 @@ function normalizeRotaOverrides(raw: unknown): RotaOverrides {
 
 function emptyData(): AppData {
   return {
-    settings: DEFAULT_SETTINGS,
+    settings: cloneDefaultSettings(),
     overtime: [],
     notes: [],
     adjustments: [],
@@ -263,10 +425,10 @@ function normalizeData(parsed: Partial<AppData>): AppData {
       : stored;
 
   return {
-    settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
-    overtime: parsed.overtime ?? [],
-    notes: parsed.notes ?? [],
-    adjustments: parsed.adjustments ?? [],
+    settings: normalizeSettings(parsed.settings),
+    overtime: Array.isArray(parsed.overtime) ? parsed.overtime : [],
+    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+    adjustments: Array.isArray(parsed.adjustments) ? parsed.adjustments : [],
     extraWork,
     attendanceBonusLosses: losses,
     rotaOverrides: normalizeRotaOverrides(parsed.rotaOverrides),

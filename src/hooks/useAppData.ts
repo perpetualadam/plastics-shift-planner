@@ -4,6 +4,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   loadData,
   saveData,
+  normalizeSettings,
   type AppData,
   type AppSettings,
   type AttendanceBonusLoss,
@@ -57,7 +58,13 @@ export function useAppData() {
     (partial: Partial<AppSettings>) => {
       setData((prev) => ({
         ...prev,
-        settings: { ...prev.settings, ...partial },
+        settings: normalizeSettings({
+          ...prev.settings,
+          ...partial,
+          dayShift: partial.dayShift ?? prev.settings.dayShift,
+          nightShift: partial.nightShift ?? prev.settings.nightShift,
+          cycle: partial.cycle ?? prev.settings.cycle,
+        }),
       }));
     },
     [setData],
@@ -190,7 +197,7 @@ export function useAppData() {
     (date: Date, kind: ShiftKind) => {
       setData((prev) => ({
         ...prev,
-        rotaOverrides: applyRotaKind(prev.rotaOverrides ?? {}, date, kind),
+        rotaOverrides: applyRotaKind(prev.rotaOverrides ?? {}, date, kind, prev.settings),
       }));
     },
     [setData],

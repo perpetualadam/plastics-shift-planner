@@ -4,20 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { paidHoursFromBreak } from "@/lib/pay";
 import {
+  CYCLE_PRESETS,
+  formatSequence,
+  nextKind,
+  wakeLeadFromTemplate,
+  type PrepStep,
+  type RotaSource,
+  type ShiftTemplate,
+} from "@/lib/shiftConfig";
+import { hhmmToMinutes, hoursBetween, isValidHhmm, sanitizeHhmm } from "@/lib/time";
+import { toDateKey } from "@/lib/rota";
+import {
+  cloneDefaultSettings,
   DEFAULT_EXTRA_WORK,
-  DEFAULT_SETTINGS,
   exportBackup,
   importBackup,
   uid,
   type AppData,
+  type AppSettings,
 } from "@/lib/storage";
-
-function hoursFromTimes(start: string, end: string): number {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  if (![sh, sm, eh, em].every(Number.isFinite)) return 0;
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
-}
 
 /** Number input that allows clearing (no sticky zero). */
 function NumberField({
@@ -90,6 +95,119 @@ function NumberField({
   );
 }
 
+function TimeField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  onCommit: (hhmm: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input
+        type="time"
+        value={isValidHhmm(value) ? sanitizeHhmm(value) : ""}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (!isValidHhmm(next)) return;
+          onCommit(sanitizeHhmm(next));
+        }}
+      />
+    </label>
+  );
+}
+
+const DAY_TIME_PRESETS: [string, string][] = [
+  ["06:00", "18:00"],
+  ["07:00", "15:00"],
+  ["08:00", "16:00"],
+  ["06:00", "14:00"],
+];
+
+const NIGHT_TIME_PRESETS: [string, string][] = [
+  ["18:00", "06:00"],
+  ["19:00", "07:00"],
+  ["22:00", "06:00"],
+  ["15:00", "23:00"],
+];
+
+function upcomingMondayKey(from = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const dow = (d.getDay() + 6) % 7;
+  if (dow !== 0) d.setDate(d.getDate() + (7 - dow));
+  return toDateKey(d);
+}
+
+function kindLetter(kind: "day" | "night" | "off"): string {
+  if (kind === "day") return "D";
+  if (kind === "night") return "N";
+  return "O";
+}
+
+function PrepEditor({
+  steps,
+  onChange,
+}: {
+  steps: PrepStep[];
+  onChange: (steps: PrepStep[]) => void;
+}) {
+  return (
+    <div className="prep-editor">
+      {steps.map((step, index) => (
+        <div key={step.id} className="prep-step">
+          <input
+            aria-label="Prep label"
+            placeholder="Label"
+            value={step.label}
+            onChange={(e) => {
+              const next = steps.map((s, i) =>
+                i === index ? { ...s, label: e.target.value } : s,
+              );
+              onChange(next);
+            }}
+          />
+          <input
+            type="time"
+            aria-label={`${step.label || "Prep"} time`}
+            value={step.time}
+            onChange={(e) => {
+              const time = e.target.value;
+              if (!time) return;
+              const next = steps.map((s, i) => (i === index ? { ...s, time } : s));
+              onChange(next);
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-label={`Remove ${step.label || "step"}`}
+            onClick={() => onChange(steps.filter((_, i) => i !== index))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      {steps.length < 8 && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() =>
+            onChange([
+              ...steps,
+              { id: uid(), label: "Prep", time: steps[steps.length - 1]?.time || "06:00" },
+            ])
+          }
+        >
+          Add prep step
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function SettingsView() {
   const {
     data,
@@ -102,60 +220,317 @@ export function SettingsView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState("");
   const overrideCount = Object.keys(data.rotaOverrides ?? {}).length;
+  const settings = data.settings;
 
   const downloadBackup = () => {
     const blob = new Blob([exportBackup(data)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `plastics-b-shift-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const slug = `${settings.plantName}-${settings.shiftName}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "shift-planner";
+    a.download = `${slug}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const syncPaidFromBreak = (partial: Partial<typeof data.settings>) => {
-    const next = { ...data.settings, ...partial };
+  const syncPaidFromBreak = (partial: Partial<typeof settings>) => {
+    const next = { ...settings, ...partial };
     updateSettings({
       ...partial,
       paidHoursPerShift: paidHoursFromBreak(next),
     });
   };
 
+  const patchTemplate = (
+    kind: "day" | "night",
+    patch: Partial<ShiftTemplate>,
+    opts?: { syncClock?: boolean },
+  ) => {
+    const current = kind === "day" ? settings.dayShift : settings.nightShift;
+    const next = { ...current, ...patch, prepSteps: patch.prepSteps ?? current.prepSteps };
+    const lead = wakeLeadFromTemplate(next);
+    const updates: Partial<AppSettings> =
+      kind === "day"
+        ? { dayShift: next, dayWakeTime: next.wakeTime, dayWakeLeadMinutes: lead }
+        : { nightShift: next, nightWakeTime: next.wakeTime, nightWakeLeadMinutes: lead };
+    if (opts?.syncClock) {
+      const clock = hoursBetween(next.start, next.end) || settings.shiftClockHours;
+      updates.shiftClockHours = clock;
+      updates.paidHoursPerShift = paidHoursFromBreak({
+        ...settings,
+        shiftClockHours: clock,
+        breakMinutes: settings.breakMinutes,
+        breakPaid: settings.breakPaid,
+      });
+    }
+    updateSettings(updates);
+  };
+
+  const dayHours = hoursBetween(settings.dayShift.start, settings.dayShift.end);
+  const nightHours = hoursBetween(settings.nightShift.start, settings.nightShift.end);
+
   return (
     <div className="stack">
       <section className="panel">
         <div className="panel-head">
-          <h2>Identity</h2>
+          <h2>Workplace</h2>
         </div>
+        <p className="help">
+          Names appear in the header, alerts, and backups. Use any company or shift — nothing is
+          locked to Plastics.
+        </p>
         <div className="form-row wrap">
           <label className="grow">
-            Plant
+            Company / plant
             <input
-              value={data.settings.plantName}
+              value={settings.plantName}
+              maxLength={48}
               onChange={(e) => updateSettings({ plantName: e.target.value })}
             />
           </label>
           <label className="grow">
             Shift name
             <input
-              value={data.settings.shiftName}
+              value={settings.shiftName}
+              maxLength={48}
               onChange={(e) => updateSettings({ shiftName: e.target.value })}
             />
           </label>
         </div>
         <label className="grow block-field">
-          First B-shift rota day (from CSV)
+          First paid rota day
           <input
             type="date"
-            value={data.settings.workStartDate || "2026-08-20"}
-            onChange={(e) => updateSettings({ workStartDate: e.target.value })}
+            value={settings.workStartDate}
+            onChange={(e) => {
+              if (e.target.value) updateSettings({ workStartDate: e.target.value });
+            }}
           />
         </label>
         <p className="help">
-          First <strong>B-shift</strong> day on the CSV is{" "}
-          <strong>Thu 20 Aug 2026</strong> (day 06:00–18:00). Earlier CSV rota days do not count
-          for pay. Induction / training below still counts as an extra payable day.
+          Rota days before this date still show on the calendar but do not count for pay. Extra
+          payable days below always count.
         </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Shift times</h2>
+        </div>
+        <p className="help">
+          These times apply to every matching day on the rota. Invalid values are ignored so the
+          app keeps running.
+        </p>
+        {(["day", "night"] as const).map((kind) => {
+          const t = kind === "day" ? settings.dayShift : settings.nightShift;
+          return (
+            <div key={kind} className="template-block">
+              <label>
+                {kind === "day" ? "Day" : "Night"} label
+                <input
+                  value={t.label}
+                  maxLength={40}
+                  onChange={(e) => patchTemplate(kind, { label: e.target.value || t.label })}
+                />
+              </label>
+              <div className="form-row wrap">
+                <TimeField
+                  label="Start"
+                  value={t.start}
+                  onCommit={(start) => patchTemplate(kind, { start }, { syncClock: true })}
+                />
+                <TimeField
+                  label="End"
+                  value={t.end}
+                  onCommit={(end) => patchTemplate(kind, { end }, { syncClock: true })}
+                />
+              </div>
+              <div className="chip-row">
+                {(kind === "day" ? DAY_TIME_PRESETS : NIGHT_TIME_PRESETS).map(([start, end]) => (
+                  <button
+                    key={`${start}-${end}`}
+                    type="button"
+                    className={`chip ${t.start === start && t.end === end ? "on" : ""}`}
+                    onClick={() => patchTemplate(kind, { start, end }, { syncClock: true })}
+                  >
+                    {start}–{end}
+                  </button>
+                ))}
+              </div>
+              <p className="help">
+                {hoursBetween(t.start, t.end)}h clock
+                {(hhmmToMinutes(t.end) ?? 0) <= (hhmmToMinutes(t.start) ?? 1)
+                  ? " (overnight)"
+                  : ""}
+              </p>
+            </div>
+          );
+        })}
+        <p className="help">
+          Day {dayHours}h · Night {nightHours}h. Pay uses the clock hours in Hours &amp; breaks
+          {dayHours !== nightHours
+            ? " — set that to whichever length you are paid for, or split differences with extra days / OT."
+            : "."}
+        </p>
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Prep checklist</h2>
+        </div>
+        <p className="help">
+          Shown on Today for the next working shift. Rename or remove steps (for example dog feed)
+          if they do not apply.
+        </p>
+        <h3 className="subhead">{settings.dayShift.label}</h3>
+        <PrepEditor
+          steps={settings.dayShift.prepSteps}
+          onChange={(prepSteps) => patchTemplate("day", { prepSteps })}
+        />
+        <h3 className="subhead">{settings.nightShift.label}</h3>
+        <PrepEditor
+          steps={settings.nightShift.prepSteps}
+          onChange={(prepSteps) => patchTemplate("night", { prepSteps })}
+        />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Rota source</h2>
+        </div>
+        <p className="help">
+          Choose how working days are filled. You can still tap any calendar day to Day / Night /
+          Off without breaking the rest of the app.
+        </p>
+        <div className="source-grid">
+          {(
+            [
+              ["csv", "Built-in 2026 rota", "Plastics B-shift CSV dates"],
+              ["cycle", "Repeating pattern", "2-2-3, 4-on-4-off, or custom"],
+              ["manual", "Blank calendar", "Start empty and tap days yourself"],
+            ] as const
+          ).map(([id, title, hint]) => (
+            <button
+              key={id}
+              type="button"
+              className={`source-card ${settings.rotaSource === id ? "on" : ""}`}
+              onClick={() => updateSettings({ rotaSource: id as RotaSource })}
+            >
+              <strong>{title}</strong>
+              <span>{hint}</span>
+            </button>
+          ))}
+        </div>
+        {settings.rotaSource === "cycle" && (
+          <div className="cycle-editor">
+            <p className="help">
+              Pattern repeats from the anchor date forever:{" "}
+              <strong>{formatSequence(settings.cycle.sequence)}</strong>
+            </p>
+            <label className="block-field">
+              Pattern starts on
+              <input
+                type="date"
+                value={settings.cycle.anchorDate}
+                onChange={(e) => {
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
+                  updateSettings({
+                    cycle: { ...settings.cycle, anchorDate: e.target.value },
+                  });
+                }}
+              />
+            </label>
+            <div className="chip-row" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="chip"
+                onClick={() =>
+                  updateSettings({
+                    cycle: { ...settings.cycle, anchorDate: upcomingMondayKey() },
+                  })
+                }
+              >
+                Start next Monday ({upcomingMondayKey()})
+              </button>
+            </div>
+            <div className="chip-row" style={{ margin: "10px 0" }}>
+              {CYCLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="chip"
+                  title={preset.hint}
+                  onClick={() =>
+                    updateSettings({
+                      cycle: { ...settings.cycle, sequence: [...preset.sequence] },
+                    })
+                  }
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="chip-row seq-row">
+              {settings.cycle.sequence.map((kind, index) => (
+                <button
+                  key={`${kind}-${index}`}
+                  type="button"
+                  className={`chip seq-chip kind-${kind}`}
+                  onClick={() => {
+                    const sequence = settings.cycle.sequence.map((k, i) =>
+                      i === index ? nextKind(k) : k,
+                    );
+                    updateSettings({ cycle: { ...settings.cycle, sequence } });
+                  }}
+                >
+                  {kindLetter(kind)}
+                </button>
+              ))}
+            </div>
+            <div className="btn-row" style={{ marginTop: 10 }}>
+              {(["day", "night", "off"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() =>
+                    updateSettings({
+                      cycle: {
+                        ...settings.cycle,
+                        sequence: [...settings.cycle.sequence, kind].slice(0, 56),
+                      },
+                    })
+                  }
+                >
+                  + {kindLetter(kind)}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={settings.cycle.sequence.length <= 1}
+                onClick={() =>
+                  updateSettings({
+                    cycle: {
+                      ...settings.cycle,
+                      sequence: settings.cycle.sequence.slice(0, -1),
+                    },
+                  })
+                }
+              >
+                Remove last
+              </button>
+            </div>
+          </div>
+        )}
+        {settings.rotaSource === "manual" && (
+          <p className="help">
+            Every date starts as off. Open Rota and tap days to build your own schedule.
+          </p>
+        )}
       </section>
 
       <section className="panel">
@@ -163,8 +538,7 @@ export function SettingsView() {
           <h2>Extra payable days</h2>
         </div>
         <p className="help">
-          One-off paid days not on the normal 12h B-shift rota. Default:{" "}
-          <strong>Mon 18 Aug 2026</strong> induction / training 09:00–18:00 (9h paid).
+          One-off paid days that are not on the normal rota (induction, training, call-ins).
         </p>
         {(data.extraWork ?? []).map((entry) => (
           <div key={entry.id} className="extra-work-card">
@@ -183,7 +557,10 @@ export function SettingsView() {
                 <input
                   type="date"
                   value={entry.dateKey}
-                  onChange={(e) => upsertExtraWork({ ...entry, dateKey: e.target.value })}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    upsertExtraWork({ ...entry, dateKey: e.target.value });
+                  }}
                 />
               </label>
             </div>
@@ -194,8 +571,9 @@ export function SettingsView() {
                   type="time"
                   value={entry.start}
                   onChange={(e) => {
-                    const start = e.target.value || "09:00";
-                    const clockHours = hoursFromTimes(start, entry.end);
+                    const start = e.target.value;
+                    if (!start) return;
+                    const clockHours = hoursBetween(start, entry.end);
                     upsertExtraWork({
                       ...entry,
                       start,
@@ -211,8 +589,9 @@ export function SettingsView() {
                   type="time"
                   value={entry.end}
                   onChange={(e) => {
-                    const end = e.target.value || "18:00";
-                    const clockHours = hoursFromTimes(entry.start, end);
+                    const end = e.target.value;
+                    if (!end) return;
+                    const clockHours = hoursBetween(entry.start, end);
                     upsertExtraWork({
                       ...entry,
                       end,
@@ -224,12 +603,12 @@ export function SettingsView() {
               </label>
               <NumberField
                 label="Paid hours"
-                value={entry.paidHours ?? entry.clockHours ?? 9}
+                value={entry.paidHours ?? entry.clockHours ?? 0}
                 min={0}
                 max={24}
                 step="0.25"
                 onCommit={(paidHours) => {
-                  const clockHours = hoursFromTimes(entry.start, entry.end);
+                  const clockHours = hoursBetween(entry.start, entry.end);
                   upsertExtraWork({ ...entry, clockHours, paidHours });
                 }}
               />
@@ -246,17 +625,18 @@ export function SettingsView() {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() =>
+          onClick={() => {
+            const dateKey = toDateKey(new Date());
             upsertExtraWork({
               id: uid(),
-              dateKey: "2026-08-18",
+              dateKey,
               label: "Extra day",
               start: "09:00",
-              end: "18:00",
-              clockHours: 9,
-              paidHours: 9,
-            })
-          }
+              end: "17:00",
+              clockHours: 8,
+              paidHours: 8,
+            });
+          }}
         >
           Add payable day
         </button>
@@ -269,21 +649,21 @@ export function SettingsView() {
         <div className="form-row wrap">
           <NumberField
             label="Hourly rate"
-            value={data.settings.hourlyRate}
+            value={settings.hourlyRate}
             min={0}
             step="0.01"
             onCommit={(hourlyRate) => updateSettings({ hourlyRate })}
           />
           <NumberField
             label="OT multiplier"
-            value={data.settings.overtimeMultiplier}
+            value={settings.overtimeMultiplier}
             min={1}
             step="0.1"
             onCommit={(overtimeMultiplier) => updateSettings({ overtimeMultiplier })}
           />
           <NumberField
             label="Night premium /hr"
-            value={data.settings.nightPremium}
+            value={settings.nightPremium}
             min={0}
             step="0.01"
             onCommit={(nightPremium) => updateSettings({ nightPremium })}
@@ -291,15 +671,47 @@ export function SettingsView() {
           <label>
             Currency
             <select
-              value={data.settings.currency}
+              value={settings.currency}
               onChange={(e) => updateSettings({ currency: e.target.value })}
             >
+              {!["GBP", "EUR", "USD", "AUD", "CAD", "NZD", "ZAR", "PLN"].includes(
+                settings.currency,
+              ) && <option value={settings.currency}>{settings.currency}</option>}
               <option value="GBP">GBP</option>
               <option value="EUR">EUR</option>
               <option value="USD">USD</option>
+              <option value="AUD">AUD</option>
+              <option value="CAD">CAD</option>
+              <option value="NZD">NZD</option>
+              <option value="ZAR">ZAR</option>
+              <option value="PLN">PLN</option>
             </select>
           </label>
         </div>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.attendanceBonusEnabled && settings.attendanceBonusAmount > 0}
+            onChange={(e) =>
+              updateSettings({
+                attendanceBonusEnabled: e.target.checked,
+                attendanceBonusAmount: e.target.checked
+                  ? settings.attendanceBonusAmount || 200
+                  : settings.attendanceBonusAmount,
+              })
+            }
+          />
+          <span>Monthly attendance bonus</span>
+        </label>
+        {settings.attendanceBonusEnabled && (
+          <NumberField
+            label="Bonus amount / month"
+            value={settings.attendanceBonusAmount}
+            min={0}
+            step="1"
+            onCommit={(attendanceBonusAmount) => updateSettings({ attendanceBonusAmount })}
+          />
+        )}
       </section>
 
       <section className="panel">
@@ -313,34 +725,34 @@ export function SettingsView() {
         <div className="form-row wrap">
           <NumberField
             label="Clock hours / shift"
-            value={data.settings.shiftClockHours}
+            value={settings.shiftClockHours}
             min={0.25}
             max={24}
             step="0.25"
             onCommit={(shiftClockHours) => {
-              const paid = Math.min(data.settings.paidHoursPerShift, shiftClockHours);
+              const paid = Math.min(settings.paidHoursPerShift, shiftClockHours);
               updateSettings({ shiftClockHours, paidHoursPerShift: paid });
             }}
           />
           <NumberField
             label="Paid hours / shift"
-            value={data.settings.paidHoursPerShift}
+            value={settings.paidHoursPerShift}
             min={0}
             max={24}
             step="0.25"
             onCommit={(paidHoursPerShift) => {
-              const clock = data.settings.shiftClockHours || 12;
+              const clock = settings.shiftClockHours || 12;
               const paid = Math.min(paidHoursPerShift, clock);
               const unpaidMins = Math.round((clock - paid) * 60);
               updateSettings({
                 paidHoursPerShift: paid,
-                breakMinutes: data.settings.breakPaid ? data.settings.breakMinutes : unpaidMins,
+                breakMinutes: settings.breakPaid ? settings.breakMinutes : unpaidMins,
               });
             }}
           />
           <NumberField
             label="Break length (min)"
-            value={data.settings.breakMinutes}
+            value={settings.breakMinutes}
             min={0}
             max={180}
             step={5}
@@ -350,17 +762,17 @@ export function SettingsView() {
         <label className="toggle">
           <input
             type="checkbox"
-            checked={data.settings.breakPaid}
+            checked={settings.breakPaid}
             onChange={(e) => syncPaidFromBreak({ breakPaid: e.target.checked })}
           />
-          <span>{data.settings.breakPaid ? "Break is paid" : "Break is unpaid"}</span>
+          <span>{settings.breakPaid ? "Break is paid" : "Break is unpaid"}</span>
         </label>
         <div className="chip-row">
           {[0, 20, 30, 45, 60].map((mins) => (
             <button
               key={mins}
               type="button"
-              className={`chip ${data.settings.breakMinutes === mins ? "on" : ""}`}
+              className={`chip ${settings.breakMinutes === mins ? "on" : ""}`}
               onClick={() => syncPaidFromBreak({ breakMinutes: mins })}
             >
               {mins === 0 ? "None" : `${mins}m`}
@@ -414,13 +826,17 @@ export function SettingsView() {
             className="btn btn-ghost"
             style={{ marginBottom: 10 }}
             onClick={() => {
-              if (!confirm(`Clear ${overrideCount} rota edit${overrideCount === 1 ? "" : "s"} and restore the CSV schedule?`))
+              if (
+                !confirm(
+                  `Clear ${overrideCount} day edit${overrideCount === 1 ? "" : "s"} and restore the base rota?`,
+                )
+              )
                 return;
               clearAllRotaOverrides();
               setMsg("Rota edits cleared.");
             }}
           >
-            Clear rota edits ({overrideCount})
+            Clear day edits ({overrideCount})
           </button>
         )}
         <button
@@ -429,7 +845,7 @@ export function SettingsView() {
           onClick={() => {
             if (!confirm("Reset all settings, overtime, and notes on this device?")) return;
             const fresh: AppData = {
-              settings: DEFAULT_SETTINGS,
+              settings: cloneDefaultSettings(),
               overtime: [],
               notes: [],
               adjustments: [],
@@ -448,12 +864,13 @@ export function SettingsView() {
       </section>
 
       <section className="panel about">
-        <h2>Plastics Shift</h2>
+        <h2>{settings.plantName.trim() || "Shift planner"}</h2>
         <p>
-          Personal B-shift planner — offline-first PWA. Schedule from your 2026 Plastics CSV rota
-          with editable days, rates, hours, breaks, and first paid-shift date.
+          Offline-first shift planner{settings.shiftName.trim() ? ` for ${settings.shiftName}` : ""}.
+          Edit workplace, times, rota source, rates, hours, and reminders — invalid values are
+          rejected so the app keeps working.
         </p>
-        <p className="fineprint">v0.1 · data stays on your phone</p>
+        <p className="fineprint">v0.2 · data stays on your phone</p>
       </section>
     </div>
   );

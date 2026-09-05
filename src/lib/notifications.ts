@@ -10,6 +10,7 @@ import {
 } from "./rota";
 import type { AppSettings, RotaOverrides } from "./storage";
 import { playAlarmSound } from "./sounds";
+import { applyHhmm, sanitizeHhmm } from "./time";
 
 const FIRED_KEY = "plastics-b-shift-fired-v1";
 
@@ -69,10 +70,7 @@ export function showNotification(title: string, body: string, tag?: string): voi
 }
 
 function parseTimeOnDate(day: Date, hhmm: string): Date {
-  const [h, m] = hhmm.split(":").map(Number);
-  const d = startOfLocalDay(day);
-  d.setHours(h, m, 0, 0);
-  return d;
+  return applyHhmm(startOfLocalDay(day), sanitizeHhmm(hhmm, "00:00"));
 }
 
 export type ScheduledEvent = {
@@ -92,10 +90,10 @@ export function buildSchedule(
   const today = startOfLocalDay(from);
 
   if (settings.remindersEnabled) {
-    const reminderDays = getReminderDates(today, 45, rotaOverrides);
+    const reminderDays = getReminderDates(today, 45, rotaOverrides, settings);
     for (const day of reminderDays) {
       const tomorrow = addDays(day, 1);
-      const shift = getShiftForDate(tomorrow, rotaOverrides);
+      const shift = getShiftForDate(tomorrow, rotaOverrides, settings);
       for (const time of settings.reminderTimes) {
         const at = parseTimeOnDate(day, time);
         if (at.getTime() < from.getTime() - 60_000) continue;
@@ -113,13 +111,13 @@ export function buildSchedule(
   if (settings.wakeAlarmsEnabled) {
     for (let i = 0; i < 30; i++) {
       const day = addDays(today, i);
-      const shift = getShiftForDate(day, rotaOverrides);
+      const shift = getShiftForDate(day, rotaOverrides, settings);
       if (shift.kind === "off") continue;
       const lead =
         shift.kind === "day" ? settings.dayWakeLeadMinutes : settings.nightWakeLeadMinutes;
       const wakeOverride =
         shift.kind === "day" ? settings.dayWakeTime : settings.nightWakeTime;
-      const at = getWakeTime(day, lead, wakeOverride, rotaOverrides);
+      const at = getWakeTime(day, lead, wakeOverride, rotaOverrides, settings);
       if (!at || at.getTime() < from.getTime() - 60_000) continue;
       events.push({
         id: `wake-${toDateKey(day)}-${wakeOverride || "default"}`,
@@ -237,13 +235,13 @@ export function nextEventSummary(
   return events[0] ?? null;
 }
 
-export function tomorrowShiftPreview(from = new Date(), overrides?: RotaOverrides) {
+export function tomorrowShiftPreview(from = new Date(), overrides?: RotaOverrides, settings?: AppSettings) {
   const tomorrow = addDays(startOfLocalDay(from), 1);
-  return getShiftForDate(tomorrow, overrides);
+  return getShiftForDate(tomorrow, overrides, settings);
 }
 
-export function todayStatus(from = new Date(), overrides?: RotaOverrides) {
-  const today = getShiftForDate(from, overrides);
-  const next = getNextWorkingShift(from, overrides);
+export function todayStatus(from = new Date(), overrides?: RotaOverrides, settings?: AppSettings) {
+  const today = getShiftForDate(from, overrides, settings);
+  const next = getNextWorkingShift(from, overrides, settings);
   return { today, next };
 }

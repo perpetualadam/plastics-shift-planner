@@ -80,13 +80,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    const plant = data.settings.plantName?.trim() || "Shift Planner";
+    const shift = data.settings.shiftName?.trim();
+    document.title = shift ? `${plant} — ${shift}` : plant;
+  }, [data.settings.plantName, data.settings.shiftName]);
+
   return (
     <div className="app-root">
       <div className="app-glow" aria-hidden />
       <header className="topbar">
         <div>
-          <p className="brand">{data.settings.plantName}</p>
-          <p className="brand-sub">{data.settings.shiftName}</p>
+          <p className="brand">{data.settings.plantName.trim() || "Company"}</p>
+          <p className="brand-sub">{data.settings.shiftName.trim() || "Shift"}</p>
         </div>
         <div className="topbar-right">
           <span className={`pill ${online ? "online" : "offline"}`}>
@@ -99,7 +105,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="banner">
           <div>
             <strong>Enable reminders</strong>
-            <p>Day-before alerts at 5pm &amp; 8pm, plus wake alarms.</p>
+            <p>
+              Day-before alerts at {data.settings.reminderTimes.join(" & ") || "your chosen times"}
+              , plus wake alarms.
+            </p>
           </div>
           <button
             type="button"

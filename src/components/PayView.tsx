@@ -14,8 +14,8 @@ import {
   type PeriodKind,
 } from "@/lib/pay";
 import {
-  ATTENDANCE_BONUS_AMOUNT,
   ATTENDANCE_BONUS_REASON_OPTIONS,
+  attendanceBonusAmountOf,
   attendanceBonusLossesForMonth,
   attendanceBonusReasonLabel,
   type AttendanceBonusLossReason,
@@ -67,6 +67,7 @@ export function PayView() {
     [data, year, month],
   );
   const annual = estimatedAnnual(data);
+  const bonusAmount = attendanceBonusAmountOf(data.settings);
   const bonusEarned = pay.attendanceBonus > 0;
   const activeLossCount = lossEntries.filter((l) => l.status === "active").length;
 
@@ -235,15 +236,15 @@ export function PayView() {
         </section>
       )}
 
-      {period === "month" && (
+      {period === "month" && bonusAmount > 0 && (
         <section className="panel">
           <div className="panel-head">
             <h2>Attendance bonus</h2>
           </div>
           <p className={`bonus-status ${bonusEarned ? "ok" : "lost"}`}>
             {bonusEarned
-              ? `${money(ATTENDANCE_BONUS_AMOUNT, data.settings.currency)} earned this month`
-              : `${money(ATTENDANCE_BONUS_AMOUNT, data.settings.currency)} lost — ${activeLossCount} active reason${activeLossCount === 1 ? "" : "s"}`}
+              ? `${money(bonusAmount, data.settings.currency)} earned this month`
+              : `${money(bonusAmount, data.settings.currency)} lost — ${activeLossCount} active reason${activeLossCount === 1 ? "" : "s"}`}
           </p>
           <p className="pay-sub" style={{ marginBottom: 12 }}>
             Log a reason if the monthly bonus is at risk. Toggle a reason to{" "}
@@ -498,7 +499,9 @@ export function PayView() {
         {data.settings.nightPremium
           ? ` · night +${money(data.settings.nightPremium, data.settings.currency)}/hr`
           : ""}{" "}
-        · attendance {money(ATTENDANCE_BONUS_AMOUNT, data.settings.currency)}/mo ·{" "}
+        {bonusAmount > 0
+          ? `· attendance ${money(bonusAmount, data.settings.currency)}/mo · `
+          : "· "}
         {breakLabel(data.settings)}. Change in Settings.
       </p>
     </div>

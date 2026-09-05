@@ -12,7 +12,7 @@ import {
   type RotaSource,
   type ShiftTemplate,
 } from "@/lib/shiftConfig";
-import { hhmmToMinutes, hoursBetween } from "@/lib/time";
+import { hhmmToMinutes, hoursBetween, isValidHhmm, sanitizeHhmm } from "@/lib/time";
 import { toDateKey } from "@/lib/rota";
 import {
   cloneDefaultSettings,
@@ -93,6 +93,52 @@ function NumberField({
       />
     </label>
   );
+}
+
+function TimeField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  onCommit: (hhmm: string) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input
+        type="time"
+        value={isValidHhmm(value) ? sanitizeHhmm(value) : ""}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (!isValidHhmm(next)) return;
+          onCommit(sanitizeHhmm(next));
+        }}
+      />
+    </label>
+  );
+}
+
+const DAY_TIME_PRESETS: [string, string][] = [
+  ["06:00", "18:00"],
+  ["07:00", "15:00"],
+  ["08:00", "16:00"],
+  ["06:00", "14:00"],
+];
+
+const NIGHT_TIME_PRESETS: [string, string][] = [
+  ["18:00", "06:00"],
+  ["19:00", "07:00"],
+  ["22:00", "06:00"],
+  ["15:00", "23:00"],
+];
+
+function upcomingMondayKey(from = new Date()): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const dow = (d.getDay() + 6) % 7;
+  if (dow !== 0) d.setDate(d.getDate() + (7 - dow));
+  return toDateKey(d);
 }
 
 function kindLetter(kind: "day" | "night" | "off"): string {
@@ -291,28 +337,28 @@ export function SettingsView() {
                 />
               </label>
               <div className="form-row wrap">
-                <label>
-                  Start
-                  <input
-                    type="time"
-                    value={t.start}
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      patchTemplate(kind, { start: e.target.value }, { syncClock: true });
-                    }}
-                  />
-                </label>
-                <label>
-                  End
-                  <input
-                    type="time"
-                    value={t.end}
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      patchTemplate(kind, { end: e.target.value }, { syncClock: true });
-                    }}
-                  />
-                </label>
+                <TimeField
+                  label="Start"
+                  value={t.start}
+                  onCommit={(start) => patchTemplate(kind, { start }, { syncClock: true })}
+                />
+                <TimeField
+                  label="End"
+                  value={t.end}
+                  onCommit={(end) => patchTemplate(kind, { end }, { syncClock: true })}
+                />
+              </div>
+              <div className="chip-row">
+                {(kind === "day" ? DAY_TIME_PRESETS : NIGHT_TIME_PRESETS).map(([start, end]) => (
+                  <button
+                    key={`${start}-${end}`}
+                    type="button"
+                    className={`chip ${t.start === start && t.end === end ? "on" : ""}`}
+                    onClick={() => patchTemplate(kind, { start, end }, { syncClock: true })}
+                  >
+                    {start}–{end}
+                  </button>
+                ))}
               </div>
               <p className="help">
                 {hoursBetween(t.start, t.end)}h clock
@@ -390,13 +436,26 @@ export function SettingsView() {
                 type="date"
                 value={settings.cycle.anchorDate}
                 onChange={(e) => {
-                  if (!e.target.value) return;
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) return;
                   updateSettings({
                     cycle: { ...settings.cycle, anchorDate: e.target.value },
                   });
                 }}
               />
             </label>
+            <div className="chip-row" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="chip"
+                onClick={() =>
+                  updateSettings({
+                    cycle: { ...settings.cycle, anchorDate: upcomingMondayKey() },
+                  })
+                }
+              >
+                Start next Monday ({upcomingMondayKey()})
+              </button>
+            </div>
             <div className="chip-row" style={{ margin: "10px 0" }}>
               {CYCLE_PRESETS.map((preset) => (
                 <button

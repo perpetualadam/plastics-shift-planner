@@ -8,6 +8,7 @@ import {
   toDateKey,
   startOfLocalDay,
 } from "./rota";
+import { isWorkingShiftKind, wakeFieldsForKind } from "./shiftConfig";
 import type { AppSettings, RotaOverrides } from "./storage";
 import { playAlarmSound } from "./sounds";
 import { applyHhmm, sanitizeHhmm } from "./time";
@@ -112,15 +113,12 @@ export function buildSchedule(
     for (let i = 0; i < 30; i++) {
       const day = addDays(today, i);
       const shift = getShiftForDate(day, rotaOverrides, settings);
-      if (shift.kind === "off") continue;
-      const lead =
-        shift.kind === "day" ? settings.dayWakeLeadMinutes : settings.nightWakeLeadMinutes;
-      const wakeOverride =
-        shift.kind === "day" ? settings.dayWakeTime : settings.nightWakeTime;
-      const at = getWakeTime(day, lead, wakeOverride, rotaOverrides, settings);
+      if (shift.kind === "off" || !isWorkingShiftKind(shift.kind)) continue;
+      const wake = wakeFieldsForKind(shift.kind, settings);
+      const at = getWakeTime(day, wake.lead, wake.time, rotaOverrides, settings);
       if (!at || at.getTime() < from.getTime() - 60_000) continue;
       events.push({
-        id: `wake-${toDateKey(day)}-${wakeOverride || "default"}`,
+        id: `wake-${toDateKey(day)}-${wake.time || "default"}`,
         at,
         type: "wake",
         title: `Wake up — ${shift.label}`,

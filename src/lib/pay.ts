@@ -21,6 +21,7 @@ import {
 
 export type PayBreakdown = {
   scheduledDays: number;
+  scheduledAfters: number;
   scheduledNights: number;
   extraDays: number;
   /** Clock hours on site (includes unpaid break time). */
@@ -191,9 +192,9 @@ export function calculatePay(
   const range = clampRangeToWorkStart(settings, start, end);
   const counts = range
     ? countWorkDaysInRange(range.start, range.end, data.rotaOverrides, settings)
-    : { days: 0, nights: 0, off: 0, hours: 0 };
+    : { days: 0, afters: 0, nights: 0, off: 0, hours: 0 };
 
-  const shifts = counts.days + counts.nights;
+  const shifts = counts.days + counts.afters + counts.nights;
   const clock = clockHoursPerShift(settings);
   const paidPer = paidHoursPerShift(settings);
   const unpaidPer = unpaidBreakHoursPerShift(settings);
@@ -232,6 +233,7 @@ export function calculatePay(
 
   return {
     scheduledDays: counts.days,
+    scheduledAfters: counts.afters,
     scheduledNights: counts.nights,
     extraDays: extras.length,
     scheduledHours,
@@ -297,6 +299,7 @@ export function comparePeriodPay(
 
   const emptyActual: PayBreakdown = {
     scheduledDays: 0,
+    scheduledAfters: 0,
     scheduledNights: 0,
     extraDays: 0,
     scheduledHours: 0,
@@ -439,7 +442,7 @@ export function estimatedAnnual(data: AppData): number {
       : yearEnd;
 
   const counts = countWorkDaysInRange(from, to, overrides, settings);
-  const workDays = counts.days + counts.nights;
+  const workDays = counts.days + counts.afters + counts.nights;
   const hoursPer = paidHoursPerShift(settings);
   const extraPaid = (data.extraWork ?? []).reduce((s, e) => s + extraWorkPaidHours(e), 0);
   const base = (workDays * hoursPer + extraPaid) * settings.hourlyRate;

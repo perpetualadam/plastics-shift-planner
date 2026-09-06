@@ -52,7 +52,7 @@ assert.equal(ROTA_DATES.length, 182);
 assert.equal(ROTA_BY_DATE["2026-08-20"]?.kind, "day");
 
 const jan = countWorkDaysInRange(new Date(2026, 0, 1), new Date(2026, 0, 31));
-assert.equal(jan.days + jan.nights + jan.off, 31);
+assert.equal(jan.days + jan.afters + jan.nights + jan.off, 31);
 assert.equal(jan.days, 8); // CSV Jan day shifts
 assert.equal(jan.nights, 7); // CSV Jan night shifts
 assert.equal(jan.off, 16);
@@ -85,6 +85,18 @@ const rangeEdited = countWorkDaysInRange(
 assert.equal(rangeEdited.days, 0);
 assert.equal(rangeEdited.nights, 1);
 assert.equal(rangeEdited.off, 1);
+
+const aftersOnly = applyRotaKind({}, restDay, "afters");
+assert.equal(getShiftForDate(restDay, aftersOnly).kind, "afters");
+assert.equal(getShiftForDate(restDay, aftersOnly).entry?.start, "14:00");
+assert.equal(getShiftForDate(restDay, aftersOnly).entry?.end, "22:00");
+const aftersRange = countWorkDaysInRange(
+  new Date(2026, 7, 19),
+  new Date(2026, 7, 20),
+  aftersOnly,
+);
+assert.equal(aftersRange.afters, 1);
+assert.equal(aftersRange.days, 1);
 
 // Matching CSV clears the override entry
 overrides = applyRotaKind(overrides, offDay, "day");

@@ -1,7 +1,7 @@
 /** Auto-generated from data/b-shift-2026.csv — do not edit by hand. */
 export type RotaEntry = {
   date: string;
-  kind: "day" | "night";
+  kind: "day" | "afters" | "night";
   start: string;
   end: string;
   previousDayWarnings: string[];

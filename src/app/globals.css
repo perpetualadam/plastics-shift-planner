@@ -10,6 +10,7 @@
   --amber: #f0c23a;
   --amber-deep: #d4a017;
   --day: #f0c23a;
+  --afters: #e07a3d;
   --night: #5b8def;
   --off: #3a4540;
   --danger: #e85d4c;
@@ -72,6 +73,7 @@ select {
   height: 55vh;
   background:
     radial-gradient(ellipse at 20% 10%, rgba(240, 194, 58, 0.22), transparent 55%),
+    radial-gradient(ellipse at 55% 0%, rgba(224, 122, 61, 0.12), transparent 50%),
     radial-gradient(ellipse at 90% 0%, rgba(91, 141, 239, 0.16), transparent 45%);
   z-index: 0;
 }
@@ -181,6 +183,12 @@ select {
     linear-gradient(160deg, rgba(240, 194, 58, 0.18), transparent 55%),
     linear-gradient(180deg, #222a25, #141a17);
   animation: hero-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.hero-shift.kind-afters {
+  background:
+    linear-gradient(160deg, rgba(224, 122, 61, 0.22), transparent 55%),
+    linear-gradient(180deg, #2a2118, #161310);
 }
 
 .hero-shift.kind-night {
@@ -341,6 +349,10 @@ select {
   border-left: 3px solid var(--day);
 }
 
+.shift-row.kind-afters {
+  border-left-color: var(--afters);
+}
+
 .shift-row.kind-night {
   border-left-color: var(--night);
 }
@@ -457,8 +469,28 @@ select {
   margin-top: 8px;
 }
 
+.preset-groups {
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preset-group-label {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
 .seq-chip.kind-day {
   background: rgba(240, 194, 58, 0.2);
+}
+
+.seq-chip.kind-afters {
+  background: rgba(224, 122, 61, 0.22);
 }
 
 .seq-chip.kind-night {
@@ -485,6 +517,10 @@ select {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.worked-list li.kind-afters {
+  border-left: 3px solid var(--afters);
 }
 
 .worked-list li.kind-extra {
@@ -637,6 +673,10 @@ textarea {
   background: rgba(240, 194, 58, 0.22);
 }
 
+.cal-cell.kind-afters {
+  background: rgba(224, 122, 61, 0.24);
+}
+
 .cal-cell.kind-night {
   background: rgba(91, 141, 239, 0.22);
 }
@@ -686,6 +726,10 @@ textarea {
 
 .legend-item.kind-day {
   border-left-color: var(--day);
+}
+
+.legend-item.kind-afters {
+  border-left-color: var(--afters);
 }
 
 .legend-item.kind-night {

@@ -13,7 +13,7 @@ In **Settings** you can:
 - Rename the company and shift
 - Change day and night start/end times (including overnight nights)
 - Edit the prep checklist (or remove dog-feed steps)
-- Switch the rota to a repeating pattern (2-2-3, 4-on-4-off, weekdays, custom) or a blank calendar you tap day-by-day
+- Switch the rota to a repeating pattern (2-2-3, continental, 4-on-4-off days/afters/nights, alternating, weekdays, custom) or a blank calendar you tap day-by-day
 - Edit pay rates, hours, breaks, and the attendance bonus
 
 Invalid values are ignored so the app keeps running.

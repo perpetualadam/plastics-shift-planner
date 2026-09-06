@@ -12,11 +12,13 @@ import {
   toDateKey,
   type ShiftKind,
 } from "@/lib/rota";
+import { kindLabel, kindLetter } from "@/lib/shiftConfig";
 import { useAppData } from "@/hooks/useAppData";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const KIND_OPTIONS: { kind: ShiftKind; label: string }[] = [
   { kind: "day", label: "Day" },
+  { kind: "afters", label: "Afters" },
   { kind: "night", label: "Night" },
   { kind: "off", label: "Off" },
 ];
@@ -99,7 +101,7 @@ export function CalendarView() {
               >
                 <span className="cal-num">{s.date.getDate()}</span>
                 <span className="cal-tag">
-                  {s.kind === "day" ? "D" : s.kind === "night" ? "N" : "·"}
+                  {s.kind === "off" ? "·" : kindLetter(s.kind)}
                   {s.overridden ? "*" : ""}
                 </span>
               </button>
@@ -151,7 +153,7 @@ export function CalendarView() {
             <div className="rota-edit-meta">
               <p className="help">
                 Edited from {rotaSourceLabel(settings.rotaSource)} (
-                {baseKind === "off" ? "off" : baseKind}). Saved on this device.
+                {kindLabel(baseKind).toLowerCase()}). Saved on this device.
               </p>
               <button
                 type="button"
@@ -163,8 +165,8 @@ export function CalendarView() {
             </div>
           ) : (
             <p className="help">
-              Tap Day, Night, or Off to edit this date. Changes stay on this device and won&apos;t
-              break the rest of the rota.
+              Tap Day, Afters, Night, or Off to edit this date. Changes stay on this device and
+              won&apos;t break the rest of the rota.
             </p>
           )}
         </div>

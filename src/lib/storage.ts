@@ -1,5 +1,6 @@
 import { toDateKey } from "./rota";
 import {
+  DEFAULT_AFTERS_SHIFT,
   DEFAULT_CYCLE,
   DEFAULT_DAY_SHIFT,
   DEFAULT_NIGHT_SHIFT,
@@ -8,6 +9,7 @@ import {
   sanitizeShiftTemplate,
   type CycleConfig,
   type RotaSource,
+  type ShiftKind,
   type ShiftTemplate,
 } from "./shiftConfig";
 import {
@@ -36,9 +38,11 @@ export type AppSettings = {
   currency: string;
   wakeLeadMinutes: number;
   dayWakeLeadMinutes: number;
+  aftersWakeLeadMinutes: number;
   nightWakeLeadMinutes: number;
-  /** Editable wake clock times (HH:MM). Kept in sync with day/night templates. */
+  /** Editable wake clock times (HH:MM). Kept in sync with day/afters/night templates. */
   dayWakeTime: string;
+  aftersWakeTime: string;
   nightWakeTime: string;
   /** First rota day that counts for pay (YYYY-MM-DD). */
   workStartDate: string;
@@ -59,6 +63,8 @@ export type AppSettings = {
   plantName: string;
   /** Day-shift times, label, and prep checklist. */
   dayShift: ShiftTemplate;
+  /** Afternoon / afters times, label, and prep checklist. */
+  aftersShift: ShiftTemplate;
   /** Night-shift times, label, and prep checklist. */
   nightShift: ShiftTemplate;
   /** Which calendar fills working days: baked CSV, repeating cycle, or blank. */
@@ -83,9 +89,9 @@ export type DayNote = {
   text: string;
 };
 
-/** Per-day override of the baked CSV rota (day / night / off). */
+/** Per-day override of the baked CSV rota (day / afters / night / off). */
 export type RotaOverride = {
-  kind: "day" | "night" | "off";
+  kind: ShiftKind;
 };
 
 export type RotaOverrides = Record<string, RotaOverride>;
@@ -182,8 +188,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currency: "GBP",
   wakeLeadMinutes: 71,
   dayWakeLeadMinutes: 71,
+  aftersWakeLeadMinutes: 71,
   nightWakeLeadMinutes: 71,
   dayWakeTime: "04:49",
+  aftersWakeTime: "12:49",
   nightWakeTime: "16:49",
   workStartDate: "2026-08-20",
   shiftClockHours: 12,
@@ -200,6 +208,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dayShift: {
     ...DEFAULT_DAY_SHIFT,
     prepSteps: DEFAULT_DAY_SHIFT.prepSteps.map((s) => ({ ...s })),
+  },
+  aftersShift: {
+    ...DEFAULT_AFTERS_SHIFT,
+    prepSteps: DEFAULT_AFTERS_SHIFT.prepSteps.map((s) => ({ ...s })),
   },
   nightShift: {
     ...DEFAULT_NIGHT_SHIFT,
@@ -238,16 +250,21 @@ function sanitizeWorkStartDate(value: unknown): string {
 export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSettings {
   const incoming = raw && typeof raw === "object" ? raw : {};
   const dayShift = sanitizeShiftTemplate(incoming.dayShift, DEFAULT_DAY_SHIFT);
+  const aftersShift = sanitizeShiftTemplate(incoming.aftersShift, DEFAULT_AFTERS_SHIFT);
   const nightShift = sanitizeShiftTemplate(incoming.nightShift, DEFAULT_NIGHT_SHIFT);
 
   const dayWakeTime = isValidHhmm(incoming.dayWakeTime)
     ? sanitizeHhmm(incoming.dayWakeTime)
     : dayShift.wakeTime;
+  const aftersWakeTime = isValidHhmm(incoming.aftersWakeTime)
+    ? sanitizeHhmm(incoming.aftersWakeTime)
+    : aftersShift.wakeTime;
   const nightWakeTime = isValidHhmm(incoming.nightWakeTime)
     ? sanitizeHhmm(incoming.nightWakeTime)
     : nightShift.wakeTime;
 
   dayShift.wakeTime = dayWakeTime;
+  aftersShift.wakeTime = aftersWakeTime;
   nightShift.wakeTime = nightWakeTime;
 
   const alarmSound = ALARM_SOUNDS.includes(incoming.alarmSound as AlarmSoundId)
@@ -274,8 +291,10 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
     currency: sanitizeCurrency(incoming.currency, DEFAULT_SETTINGS.currency),
     wakeLeadMinutes: finiteNumber(incoming.wakeLeadMinutes, 71, 0, 24 * 60),
     dayWakeLeadMinutes: finiteNumber(incoming.dayWakeLeadMinutes, 71, 0, 24 * 60),
+    aftersWakeLeadMinutes: finiteNumber(incoming.aftersWakeLeadMinutes, 71, 0, 24 * 60),
     nightWakeLeadMinutes: finiteNumber(incoming.nightWakeLeadMinutes, 71, 0, 24 * 60),
     dayWakeTime,
+    aftersWakeTime,
     nightWakeTime,
     workStartDate: sanitizeWorkStartDate(incoming.workStartDate),
     shiftClockHours,
@@ -290,6 +309,7 @@ export function normalizeSettings(raw?: Partial<AppSettings> | null): AppSetting
     shiftName: sanitizeLiveText(incoming.shiftName, 48, DEFAULT_SETTINGS.shiftName),
     plantName: sanitizeLiveText(incoming.plantName, 48, DEFAULT_SETTINGS.plantName),
     dayShift,
+    aftersShift,
     nightShift,
     rotaSource: isRotaSource(incoming.rotaSource) ? incoming.rotaSource : "csv",
     cycle: sanitizeCycle(incoming.cycle),
@@ -318,6 +338,7 @@ export function cloneDefaultSettings(): AppSettings {
   return {
     ...s,
     dayShift: cloneTemplate(s.dayShift),
+    aftersShift: cloneTemplate(s.aftersShift),
     nightShift: cloneTemplate(s.nightShift),
     cycle: { ...s.cycle, sequence: [...s.cycle.sequence] },
     reminderTimes: [...s.reminderTimes],
@@ -326,6 +347,7 @@ export function cloneDefaultSettings(): AppSettings {
 
 export const CSV_DEFAULT_WAKE = {
   day: "04:49",
+  afters: "12:49",
   night: "16:49",
 } as const;
 
@@ -375,7 +397,7 @@ function normalizeRotaOverrides(raw: unknown): RotaOverrides {
         : typeof value === "string"
           ? value
           : null;
-    if (kind === "day" || kind === "night" || kind === "off") {
+    if (kind === "day" || kind === "afters" || kind === "night" || kind === "off") {
       out[key] = { kind };
     }
   }

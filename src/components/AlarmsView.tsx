@@ -9,6 +9,7 @@ import {
 } from "@/lib/notifications";
 import { SOUND_OPTIONS, playAlarmSound } from "@/lib/sounds";
 import {
+  DEFAULT_AFTERS_SHIFT,
   DEFAULT_DAY_SHIFT,
   DEFAULT_NIGHT_SHIFT,
   wakeLeadFromTemplate,
@@ -98,7 +99,8 @@ export function AlarmsView() {
           <h2>Wake alarms</h2>
         </div>
         <p className="help">
-          Set wake times for {settings.dayShift.label.toLowerCase()} and{" "}
+          Set wake times for {settings.dayShift.label.toLowerCase()},{" "}
+          {settings.aftersShift.label.toLowerCase()}, and{" "}
           {settings.nightShift.label.toLowerCase()}. Defaults follow your shift start times.
         </p>
         <label className="toggle">
@@ -122,6 +124,22 @@ export function AlarmsView() {
                   dayWakeTime,
                   dayShift,
                   dayWakeLeadMinutes: wakeLeadFromTemplate(dayShift),
+                });
+              }}
+            />
+          </label>
+          <label>
+            {settings.aftersShift.label} wake
+            <input
+              type="time"
+              value={settings.aftersWakeTime || settings.aftersShift.wakeTime}
+              onChange={(e) => {
+                const aftersWakeTime = e.target.value || settings.aftersShift.wakeTime;
+                const aftersShift = { ...settings.aftersShift, wakeTime: aftersWakeTime };
+                updateSettings({
+                  aftersWakeTime,
+                  aftersShift,
+                  aftersWakeLeadMinutes: wakeLeadFromTemplate(aftersShift),
                 });
               }}
             />
@@ -152,16 +170,23 @@ export function AlarmsView() {
                 ...settings.dayShift,
                 wakeTime: DEFAULT_DAY_SHIFT.wakeTime,
               };
+              const aftersShift = {
+                ...settings.aftersShift,
+                wakeTime: DEFAULT_AFTERS_SHIFT.wakeTime,
+              };
               const nightShift = {
                 ...settings.nightShift,
                 wakeTime: DEFAULT_NIGHT_SHIFT.wakeTime,
               };
               updateSettings({
                 dayWakeTime: CSV_DEFAULT_WAKE.day,
+                aftersWakeTime: CSV_DEFAULT_WAKE.afters,
                 nightWakeTime: CSV_DEFAULT_WAKE.night,
                 dayShift,
+                aftersShift,
                 nightShift,
                 dayWakeLeadMinutes: wakeLeadFromTemplate(dayShift),
+                aftersWakeLeadMinutes: wakeLeadFromTemplate(aftersShift),
                 nightWakeLeadMinutes: wakeLeadFromTemplate(nightShift),
               });
             }}
@@ -170,8 +195,9 @@ export function AlarmsView() {
           </button>
         </div>
         <p className="help">
-          {settings.dayShift.label} starts {settings.dayShift.start} · {settings.nightShift.label}{" "}
-          starts {settings.nightShift.start}. Change start times in Settings → Shift times.
+          {settings.dayShift.label} starts {settings.dayShift.start} · {settings.aftersShift.label}{" "}
+          starts {settings.aftersShift.start} · {settings.nightShift.label} starts{" "}
+          {settings.nightShift.start}. Change start times in Settings → Shift times.
         </p>
       </section>
 

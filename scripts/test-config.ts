@@ -10,8 +10,12 @@ import {
   getWakeTime,
 } from "../src/lib/rota";
 import {
+  CYCLE_PRESETS,
+  DEFAULT_AFTERS_SHIFT,
   DEFAULT_DAY_SHIFT,
   DEFAULT_NIGHT_SHIFT,
+  matchingPreset,
+  nextKind,
   sanitizeCycle,
   sanitizeShiftTemplate,
 } from "../src/lib/shiftConfig";
@@ -190,5 +194,79 @@ assert.deepEqual(cycle.sequence, ["day", "off"]);
 
 const emptyCycle = sanitizeCycle({ sequence: [] });
 assert.ok(emptyCycle.sequence.length > 0);
+
+const aftersKept = sanitizeCycle({
+  anchorDate: "2026-03-02",
+  sequence: ["day", "afters", "night", "off"],
+});
+assert.deepEqual(aftersKept.sequence, ["day", "afters", "night", "off"]);
+assert.equal(nextKind("day"), "afters");
+assert.equal(nextKind("afters"), "night");
+assert.equal(nextKind("night"), "off");
+assert.equal(nextKind("off"), "day");
+
+const continental = CYCLE_PRESETS.find((p) => p.id === "continental");
+assert.ok(continental);
+assert.equal(matchingPreset(continental.sequence)?.id, "continental");
+const continentalSettings: AppSettings = normalizeSettings({
+  rotaSource: "cycle",
+  cycle: { anchorDate: "2026-03-02", sequence: [...continental.sequence] },
+});
+assert.equal(getCycleKind(new Date(2026, 2, 2), continentalSettings.cycle), "day");
+assert.equal(getCycleKind(new Date(2026, 2, 3), continentalSettings.cycle), "day");
+assert.equal(getCycleKind(new Date(2026, 2, 4), continentalSettings.cycle), "afters");
+assert.equal(getCycleKind(new Date(2026, 2, 5), continentalSettings.cycle), "afters");
+assert.equal(getCycleKind(new Date(2026, 2, 6), continentalSettings.cycle), "night");
+assert.equal(getCycleKind(new Date(2026, 2, 7), continentalSettings.cycle), "night");
+assert.equal(getCycleKind(new Date(2026, 2, 8), continentalSettings.cycle), "off");
+assert.equal(getCycleKind(new Date(2026, 2, 9), continentalSettings.cycle), "off");
+assert.equal(getCycleKind(new Date(2026, 2, 10), continentalSettings.cycle), "day");
+
+const aftersShift = getShiftForDate(new Date(2026, 2, 4), {}, continentalSettings);
+assert.equal(aftersShift.kind, "afters");
+assert.equal(aftersShift.entry?.start, DEFAULT_AFTERS_SHIFT.start);
+assert.equal(aftersShift.entry?.end, DEFAULT_AFTERS_SHIFT.end);
+assert.equal(formatShiftTime(aftersShift), "14:00 – 22:00");
+assert.equal(aftersShift.label, "Afters");
+
+const fourNights = CYCLE_PRESETS.find((p) => p.id === "4-4-nights");
+assert.ok(fourNights);
+const nightRota: AppSettings = normalizeSettings({
+  rotaSource: "cycle",
+  cycle: { anchorDate: "2026-03-02", sequence: [...fourNights.sequence] },
+});
+assert.equal(getCycleKind(new Date(2026, 2, 2), nightRota.cycle), "night");
+assert.equal(getCycleKind(new Date(2026, 2, 5), nightRota.cycle), "night");
+assert.equal(getCycleKind(new Date(2026, 2, 6), nightRota.cycle), "off");
+assert.equal(getCycleKind(new Date(2026, 2, 9), nightRota.cycle), "off");
+assert.equal(getCycleKind(new Date(2026, 2, 10), nightRota.cycle), "night");
+
+const altDays = CYCLE_PRESETS.find((p) => p.id === "alt-days");
+assert.ok(altDays);
+const altRota: AppSettings = normalizeSettings({
+  rotaSource: "cycle",
+  cycle: { anchorDate: "2026-03-02", sequence: [...altDays.sequence] },
+});
+assert.equal(getCycleKind(new Date(2026, 2, 2), altRota.cycle), "day");
+assert.equal(getCycleKind(new Date(2026, 2, 3), altRota.cycle), "off");
+assert.equal(getCycleKind(new Date(2026, 2, 4), altRota.cycle), "day");
+
+const sixTwo = CYCLE_PRESETS.find((p) => p.id === "continental-6-2");
+assert.ok(sixTwo);
+assert.equal(sixTwo.sequence.length, 26);
+assert.equal(sixTwo.sequence.filter((k) => k === "afters").length, 6);
+assert.equal(sixTwo.sequence.filter((k) => k === "night").length, 6);
+assert.equal(sixTwo.sequence.filter((k) => k === "off").length, 8);
+
+for (const preset of CYCLE_PRESETS) {
+  assert.ok(preset.sequence.length > 0, preset.id);
+  assert.ok(preset.sequence.every((k) => k === "day" || k === "afters" || k === "night" || k === "off"), preset.id);
+  assert.equal(matchingPreset(preset.sequence)?.id, preset.id, preset.id);
+}
+
+const aftersWake = getWakeTime(new Date(2026, 2, 4), 71, null, {}, continentalSettings);
+assert.ok(aftersWake);
+assert.equal(aftersWake.getHours(), 12);
+assert.equal(aftersWake.getMinutes(), 49);
 
 console.log("config tests passed");

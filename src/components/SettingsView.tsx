@@ -4,13 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { paidHoursFromBreak } from "@/lib/pay";
 import {
+  CYCLE_PRESET_GROUPS,
   CYCLE_PRESETS,
   formatSequence,
+  kindLetter,
+  matchingPreset,
   nextKind,
   wakeLeadFromTemplate,
   type PrepStep,
   type RotaSource,
   type ShiftTemplate,
+  type WorkingShiftKind,
 } from "@/lib/shiftConfig";
 import { hhmmToMinutes, hoursBetween, isValidHhmm, sanitizeHhmm } from "@/lib/time";
 import { toDateKey } from "@/lib/rota";
@@ -127,11 +131,18 @@ const DAY_TIME_PRESETS: [string, string][] = [
   ["06:00", "14:00"],
 ];
 
+const AFTERS_TIME_PRESETS: [string, string][] = [
+  ["14:00", "22:00"],
+  ["13:00", "21:00"],
+  ["15:00", "23:00"],
+  ["14:00", "02:00"],
+];
+
 const NIGHT_TIME_PRESETS: [string, string][] = [
   ["18:00", "06:00"],
   ["19:00", "07:00"],
   ["22:00", "06:00"],
-  ["15:00", "23:00"],
+  ["20:00", "08:00"],
 ];
 
 function upcomingMondayKey(from = new Date()): string {
@@ -139,12 +150,6 @@ function upcomingMondayKey(from = new Date()): string {
   const dow = (d.getDay() + 6) % 7;
   if (dow !== 0) d.setDate(d.getDate() + (7 - dow));
   return toDateKey(d);
-}
-
-function kindLetter(kind: "day" | "night" | "off"): string {
-  if (kind === "day") return "D";
-  if (kind === "night") return "N";
-  return "O";
 }
 
 function PrepEditor({
@@ -245,17 +250,24 @@ export function SettingsView() {
   };
 
   const patchTemplate = (
-    kind: "day" | "night",
+    kind: WorkingShiftKind,
     patch: Partial<ShiftTemplate>,
     opts?: { syncClock?: boolean },
   ) => {
-    const current = kind === "day" ? settings.dayShift : settings.nightShift;
+    const current =
+      kind === "day"
+        ? settings.dayShift
+        : kind === "afters"
+          ? settings.aftersShift
+          : settings.nightShift;
     const next = { ...current, ...patch, prepSteps: patch.prepSteps ?? current.prepSteps };
     const lead = wakeLeadFromTemplate(next);
     const updates: Partial<AppSettings> =
       kind === "day"
         ? { dayShift: next, dayWakeTime: next.wakeTime, dayWakeLeadMinutes: lead }
-        : { nightShift: next, nightWakeTime: next.wakeTime, nightWakeLeadMinutes: lead };
+        : kind === "afters"
+          ? { aftersShift: next, aftersWakeTime: next.wakeTime, aftersWakeLeadMinutes: lead }
+          : { nightShift: next, nightWakeTime: next.wakeTime, nightWakeLeadMinutes: lead };
     if (opts?.syncClock) {
       const clock = hoursBetween(next.start, next.end) || settings.shiftClockHours;
       updates.shiftClockHours = clock;
@@ -269,7 +281,22 @@ export function SettingsView() {
     updateSettings(updates);
   };
 
+  const timePresets = (kind: WorkingShiftKind): [string, string][] => {
+    if (kind === "day") return DAY_TIME_PRESETS;
+    if (kind === "afters") return AFTERS_TIME_PRESETS;
+    return NIGHT_TIME_PRESETS;
+  };
+
+  const templateOf = (kind: WorkingShiftKind): ShiftTemplate => {
+    if (kind === "day") return settings.dayShift;
+    if (kind === "afters") return settings.aftersShift;
+    return settings.nightShift;
+  };
+
+  const selectedPreset = matchingPreset(settings.cycle.sequence);
+
   const dayHours = hoursBetween(settings.dayShift.start, settings.dayShift.end);
+  const aftersHours = hoursBetween(settings.aftersShift.start, settings.aftersShift.end);
   const nightHours = hoursBetween(settings.nightShift.start, settings.nightShift.end);
 
   return (
@@ -324,12 +351,12 @@ export function SettingsView() {
           These times apply to every matching day on the rota. Invalid values are ignored so the
           app keeps running.
         </p>
-        {(["day", "night"] as const).map((kind) => {
-          const t = kind === "day" ? settings.dayShift : settings.nightShift;
+        {(["day", "afters", "night"] as const).map((kind) => {
+          const t = templateOf(kind);
           return (
             <div key={kind} className="template-block">
               <label>
-                {kind === "day" ? "Day" : "Night"} label
+                {kind === "day" ? "Day" : kind === "afters" ? "Afters" : "Night"} label
                 <input
                   value={t.label}
                   maxLength={40}
@@ -349,7 +376,7 @@ export function SettingsView() {
                 />
               </div>
               <div className="chip-row">
-                {(kind === "day" ? DAY_TIME_PRESETS : NIGHT_TIME_PRESETS).map(([start, end]) => (
+                {timePresets(kind).map(([start, end]) => (
                   <button
                     key={`${start}-${end}`}
                     type="button"
@@ -370,8 +397,9 @@ export function SettingsView() {
           );
         })}
         <p className="help">
-          Day {dayHours}h · Night {nightHours}h. Pay uses the clock hours in Hours &amp; breaks
-          {dayHours !== nightHours
+          Day {dayHours}h · Afters {aftersHours}h · Night {nightHours}h. Pay uses the clock hours in
+          Hours &amp; breaks
+          {dayHours !== nightHours || dayHours !== aftersHours
             ? " — set that to whichever length you are paid for, or split differences with extra days / OT."
             : "."}
         </p>
@@ -390,6 +418,11 @@ export function SettingsView() {
           steps={settings.dayShift.prepSteps}
           onChange={(prepSteps) => patchTemplate("day", { prepSteps })}
         />
+        <h3 className="subhead">{settings.aftersShift.label}</h3>
+        <PrepEditor
+          steps={settings.aftersShift.prepSteps}
+          onChange={(prepSteps) => patchTemplate("afters", { prepSteps })}
+        />
         <h3 className="subhead">{settings.nightShift.label}</h3>
         <PrepEditor
           steps={settings.nightShift.prepSteps}
@@ -402,14 +435,14 @@ export function SettingsView() {
           <h2>Rota source</h2>
         </div>
         <p className="help">
-          Choose how working days are filled. You can still tap any calendar day to Day / Night /
-          Off without breaking the rest of the app.
+          Choose how working days are filled. You can still tap any calendar day to Day / Afters /
+          Night / Off without breaking the rest of the app.
         </p>
         <div className="source-grid">
           {(
             [
               ["csv", "Built-in 2026 rota", "Plastics B-shift CSV dates"],
-              ["cycle", "Repeating pattern", "2-2-3, 4-on-4-off, or custom"],
+              ["cycle", "Repeating pattern", "Continental, 4-on-4-off, afters, nights, or custom"],
               ["manual", "Blank calendar", "Start empty and tap days yourself"],
             ] as const
           ).map(([id, title, hint]) => (
@@ -456,21 +489,28 @@ export function SettingsView() {
                 Start next Monday ({upcomingMondayKey()})
               </button>
             </div>
-            <div className="chip-row" style={{ margin: "10px 0" }}>
-              {CYCLE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="chip"
-                  title={preset.hint}
-                  onClick={() =>
-                    updateSettings({
-                      cycle: { ...settings.cycle, sequence: [...preset.sequence] },
-                    })
-                  }
-                >
-                  {preset.label}
-                </button>
+            <div className="preset-groups">
+              {CYCLE_PRESET_GROUPS.map((group) => (
+                <div key={group.id} className="preset-group">
+                  <p className="preset-group-label">{group.label}</p>
+                  <div className="chip-row">
+                    {CYCLE_PRESETS.filter((preset) => preset.group === group.id).map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`chip ${selectedPreset?.id === preset.id ? "on" : ""}`}
+                        title={preset.hint}
+                        onClick={() =>
+                          updateSettings({
+                            cycle: { ...settings.cycle, sequence: [...preset.sequence] },
+                          })
+                        }
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
             <div className="chip-row seq-row">
@@ -491,7 +531,7 @@ export function SettingsView() {
               ))}
             </div>
             <div className="btn-row" style={{ marginTop: 10 }}>
-              {(["day", "night", "off"] as const).map((kind) => (
+              {(["day", "afters", "night", "off"] as const).map((kind) => (
                 <button
                   key={kind}
                   type="button"

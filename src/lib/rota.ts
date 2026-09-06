@@ -2,20 +2,25 @@
 
 import { ROTA_BY_DATE, type RotaEntry } from "./rotaData";
 import {
+  DEFAULT_AFTERS_SHIFT,
   DEFAULT_CYCLE,
   DEFAULT_DAY_SHIFT,
   DEFAULT_NIGHT_SHIFT,
   clockHoursFromTemplate,
+  kindLabel,
   templateForKind,
   type CycleConfig,
   type PrepStep,
   type RotaSource,
+  type ShiftKind,
   type ShiftTemplate,
+  type ShiftTemplates,
+  type WorkingShiftKind,
 } from "./shiftConfig";
 import { applyHhmm, formatTimeRange, hoursBetween, sanitizeHhmm } from "./time";
 import type { RotaOverrides } from "./storage";
 
-export type ShiftKind = "day" | "night" | "off";
+export type { ShiftKind, WorkingShiftKind } from "./shiftConfig";
 
 export type ShiftDay = {
   date: Date;
@@ -35,10 +40,12 @@ export type ShiftDay = {
 /** Settings slice used to resolve kinds and times. Optional everywhere — defaults match the baked CSV. */
 export type RotaSettings = {
   dayShift?: ShiftTemplate;
+  aftersShift?: ShiftTemplate;
   nightShift?: ShiftTemplate;
   rotaSource?: RotaSource;
   cycle?: CycleConfig;
   dayWakeTime?: string;
+  aftersWakeTime?: string;
   nightWakeTime?: string;
   shiftClockHours?: number;
 };
@@ -55,16 +62,22 @@ function dayTemplate(settings?: RotaSettings): ShiftTemplate {
   return settings?.dayShift ?? DEFAULT_DAY_SHIFT;
 }
 
+function aftersTemplate(settings?: RotaSettings): ShiftTemplate {
+  return settings?.aftersShift ?? DEFAULT_AFTERS_SHIFT;
+}
+
 function nightTemplate(settings?: RotaSettings): ShiftTemplate {
   return settings?.nightShift ?? DEFAULT_NIGHT_SHIFT;
 }
 
-function templates(settings?: RotaSettings): { day: ShiftTemplate; night: ShiftTemplate } {
+function templates(settings?: RotaSettings): ShiftTemplates {
   const day = { ...dayTemplate(settings) };
+  const afters = { ...aftersTemplate(settings) };
   const night = { ...nightTemplate(settings) };
   if (settings?.dayWakeTime) day.wakeTime = sanitizeHhmm(settings.dayWakeTime, day.wakeTime);
+  if (settings?.aftersWakeTime) afters.wakeTime = sanitizeHhmm(settings.aftersWakeTime, afters.wakeTime);
   if (settings?.nightWakeTime) night.wakeTime = sanitizeHhmm(settings.nightWakeTime, night.wakeTime);
-  return { day, night };
+  return { day, afters, night };
 }
 
 export function startOfLocalDay(d: Date): Date {
@@ -100,7 +113,7 @@ function daysBetween(a: Date, b: Date): number {
 export function getCycleKind(date: Date, cycle?: CycleConfig): ShiftKind {
   const cfg = cycle ?? DEFAULT_CYCLE;
   const sequence = (cfg.sequence ?? []).filter(
-    (k): k is ShiftKind => k === "day" || k === "night" || k === "off",
+    (k): k is ShiftKind => k === "day" || k === "afters" || k === "night" || k === "off",
   );
   if (sequence.length === 0) return "off";
   const anchor = parseDateKey(cfg.anchorDate || DEFAULT_CYCLE.anchorDate);
@@ -127,31 +140,42 @@ export function isRotaOverridden(date: Date, overrides?: RotaOverrides): boolean
   return Boolean(overrides?.[toDateKey(date)]);
 }
 
-function entryFromTemplate(dateKey: string, kind: "day" | "night", template: ShiftTemplate): RotaEntry {
+const KIND_CLOCK: Record<WorkingShiftKind, { start: string; end: string; wake: string }> = {
+  day: { start: "06:00", end: "18:00", wake: "04:49" },
+  afters: { start: "14:00", end: "22:00", wake: "12:49" },
+  night: { start: "18:00", end: "06:00", wake: "16:49" },
+};
+
+function entryFromTemplate(
+  dateKey: string,
+  kind: WorkingShiftKind,
+  template: ShiftTemplate,
+): RotaEntry {
   const steps = template.prepSteps ?? [];
-  const wake = sanitizeHhmm(template.wakeTime, kind === "day" ? "04:49" : "16:49");
+  const clock = KIND_CLOCK[kind];
+  const wake = sanitizeHhmm(template.wakeTime, clock.wake);
   return {
     date: dateKey,
     kind,
-    start: sanitizeHhmm(template.start, kind === "day" ? "06:00" : "18:00"),
-    end: sanitizeHhmm(template.end, kind === "day" ? "18:00" : "06:00"),
+    start: sanitizeHhmm(template.start, clock.start),
+    end: sanitizeHhmm(template.end, clock.end),
     previousDayWarnings: [...DEFAULT_WARNINGS],
     morningDogFeed: kind === "day" ? wake : null,
-    afternoonDogFeed: kind === "night" ? wake : null,
+    afternoonDogFeed: kind === "day" ? null : wake,
     getDressed: steps[1]?.time ?? null,
     leaveForWork: steps[2]?.time ?? null,
     targetArrival: steps[3]?.time ?? null,
   };
 }
 
-/** Default day/night template used when adding a shift that is not in the CSV. */
+/** Default day/afters/night template used when adding a shift that is not in the CSV. */
 export function makeDefaultRotaEntry(
   dateKey: string,
-  kind: "day" | "night",
+  kind: WorkingShiftKind,
   settings?: RotaSettings,
 ): RotaEntry {
   const t = templates(settings);
-  return entryFromTemplate(dateKey, kind, templateForKind(kind, t.day, t.night));
+  return entryFromTemplate(dateKey, kind, templateForKind(kind, t));
 }
 
 function overlayTemplate(entry: RotaEntry, template: ShiftTemplate): RotaEntry {
@@ -180,7 +204,7 @@ export function getRotaEntry(
   if (kind === "off") return undefined;
 
   const t = templates(settings);
-  const template = templateForKind(kind, t.day, t.night);
+  const template = templateForKind(kind, t);
   const csv = ROTA_BY_DATE[key];
   if (csv && csv.kind === kind && (settings?.rotaSource ?? "csv") === "csv") {
     return overlayTemplate(csv, template);
@@ -192,7 +216,7 @@ export function getRotaEntry(
 export function getCycleDay(date: Date, overrides?: RotaOverrides, settings?: RotaSettings): number {
   const entry = getRotaEntry(date, overrides, settings);
   if (!entry) return 4;
-  return entry.kind === "day" ? 0 : 2;
+  return entry.kind === "day" ? 0 : entry.kind === "afters" ? 1 : 2;
 }
 
 export function getShiftForDate(
@@ -220,30 +244,19 @@ export function getShiftForDate(
     };
   }
 
-  const template = templateForKind(entry.kind, t.day, t.night);
+  const template = templateForKind(entry.kind, t);
   const hours = hoursBetween(entry.start, entry.end) || clockHoursFromTemplate(template, clockFallback);
-
-  if (entry.kind === "day") {
-    return {
-      date: day,
-      kind: "day",
-      cycleDay: 0,
-      label: template.label || "Day shift",
-      startHour: parseHour(entry.start) ?? 6,
-      endHour: parseHour(entry.end) ?? 18,
-      hours,
-      entry,
-      overridden,
-    };
-  }
+  const cycleDay = entry.kind === "day" ? 0 : entry.kind === "afters" ? 1 : 2;
+  const fallbackStart = parseHour(KIND_CLOCK[entry.kind].start) ?? 6;
+  const fallbackEnd = parseHour(KIND_CLOCK[entry.kind].end) ?? 18;
 
   return {
     date: day,
-    kind: "night",
-    cycleDay: 2,
-    label: template.label || "Night shift",
-    startHour: parseHour(entry.start) ?? 18,
-    endHour: parseHour(entry.end) ?? 6,
+    kind: entry.kind,
+    cycleDay,
+    label: template.label || kindLabel(entry.kind),
+    startHour: parseHour(entry.start) ?? fallbackStart,
+    endHour: parseHour(entry.end) ?? fallbackEnd,
     hours,
     entry,
     overridden,
@@ -256,6 +269,7 @@ export function formatShiftTime(shift: ShiftDay): string {
     return formatTimeRange(shift.entry.start, shift.entry.end);
   }
   if (shift.kind === "day") return "06:00 – 18:00";
+  if (shift.kind === "afters") return "14:00 – 22:00";
   if (shift.kind === "night") return "18:00 – 06:00";
   return "Rest day";
 }
@@ -301,7 +315,7 @@ export function getWakeTime(
   const csvWake =
     entry?.kind === "day"
       ? entry.morningDogFeed
-      : entry?.kind === "night"
+      : entry?.kind === "afters" || entry?.kind === "night"
         ? entry.afternoonDogFeed
         : null;
 
@@ -332,7 +346,7 @@ export function getPrepTimes(
   const entry = getRotaEntry(date, overrides, settings);
   if (!entry) return null;
   const t = templates(settings);
-  const template = templateForKind(entry.kind, t.day, t.night);
+  const template = templateForKind(entry.kind, t);
   const steps = (template.prepSteps ?? []).filter((s) => s.label && s.time);
   return {
     dogFeed: entry.kind === "day" ? entry.morningDogFeed : entry.afternoonDogFeed,
@@ -410,19 +424,23 @@ export function countWorkDaysInRange(
   end: Date,
   overrides?: RotaOverrides,
   settings?: RotaSettings,
-): { days: number; nights: number; off: number; hours: number } {
+): { days: number; afters: number; nights: number; off: number; hours: number } {
   let days = 0;
+  let afters = 0;
   let nights = 0;
   let off = 0;
   let hours = 0;
   const cursor = startOfLocalDay(start);
   const last = startOfLocalDay(end);
-  if (cursor.getTime() > last.getTime()) return { days, nights, off, hours };
+  if (cursor.getTime() > last.getTime()) return { days, afters, nights, off, hours };
   let guard = 0;
   while (cursor.getTime() <= last.getTime() && guard < 800) {
     const s = getShiftForDate(cursor, overrides, settings);
     if (s.kind === "day") {
       days++;
+      hours += s.hours;
+    } else if (s.kind === "afters") {
+      afters++;
       hours += s.hours;
     } else if (s.kind === "night") {
       nights++;
@@ -433,13 +451,14 @@ export function countWorkDaysInRange(
     cursor.setDate(cursor.getDate() + 1);
     guard++;
   }
-  return { days, nights, off, hours };
+  return { days, afters, nights, off, hours };
 }
 
 export function cycleLegend(settings?: RotaSettings): { kind: ShiftKind; days: number; label: string }[] {
   const t = templates(settings);
   return [
     { kind: "day", days: 2, label: t.day.label || "Day shifts" },
+    { kind: "afters", days: 2, label: t.afters.label || "Afters" },
     { kind: "night", days: 2, label: t.night.label || "Night shifts" },
     { kind: "off", days: 3, label: "Off days" },
   ];

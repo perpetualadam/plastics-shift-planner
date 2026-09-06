@@ -14,6 +14,7 @@ import {
   isSameDay,
   type ShiftDay,
 } from "@/lib/rota";
+import { isWorkingShiftKind, wakeFieldsForKind } from "@/lib/shiftConfig";
 import { useAppData } from "@/hooks/useAppData";
 import { calculateMonthPay, money } from "@/lib/pay";
 
@@ -75,13 +76,15 @@ export function TodayView() {
   const monthPay = calculateMonthPay(data, now.getFullYear(), now.getMonth());
 
   const wakeTarget = today.kind !== "off" ? today : upcoming[0];
-  const wake = wakeTarget
+  const wakeFields =
+    wakeTarget && isWorkingShiftKind(wakeTarget.kind)
+      ? wakeFieldsForKind(wakeTarget.kind, settings)
+      : null;
+  const wake = wakeTarget && wakeFields
     ? getWakeTime(
         wakeTarget.date,
-        wakeTarget.kind === "day"
-          ? settings.dayWakeLeadMinutes
-          : settings.nightWakeLeadMinutes,
-        wakeTarget.kind === "day" ? settings.dayWakeTime : settings.nightWakeTime,
+        wakeFields.lead,
+        wakeFields.time,
         overrides,
         settings,
       )
@@ -131,7 +134,7 @@ export function TodayView() {
         <div>
           <p className="stat-label">This month</p>
           <p className="stat-value">
-            {monthPay.scheduledDays + monthPay.scheduledNights}
+            {monthPay.scheduledDays + monthPay.scheduledAfters + monthPay.scheduledNights}
             <span> days</span>
           </p>
         </div>

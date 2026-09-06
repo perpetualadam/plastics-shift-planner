@@ -21,6 +21,7 @@ import {
   type AttendanceBonusLossReason,
   overtimeForMonth,
 } from "@/lib/storage";
+import { kindLabel } from "@/lib/shiftConfig";
 import { toDateKey } from "@/lib/rota";
 
 export function PayView() {
@@ -212,6 +213,10 @@ export function PayView() {
           <div>
             <p className="stat-label">Day shifts</p>
             <p className="stat-value">{pay.scheduledDays}</p>
+          </div>
+          <div>
+            <p className="stat-label">Afters</p>
+            <p className="stat-value">{pay.scheduledAfters}</p>
           </div>
           <div>
             <p className="stat-label">Night shifts</p>
@@ -466,7 +471,7 @@ export function PayView() {
                   <span>
                     {r.kind === "extra"
                       ? r.label || "extra"
-                      : `${r.kind}${!r.countsForPay ? " · before start date" : ""}`}
+                      : `${kindLabel(r.kind).toLowerCase()}${!r.countsForPay ? " · before start date" : ""}`}
                   </span>
                   <span>
                     {!r.countsForPay

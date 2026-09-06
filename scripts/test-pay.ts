@@ -16,6 +16,7 @@ import {
   DEFAULT_SETTINGS,
   type AppData,
 } from "../src/lib/storage";
+import { CYCLE_PRESETS } from "../src/lib/shiftConfig";
 import { getShiftForDate } from "../src/lib/rota";
 import { ROTA_BY_DATE } from "../src/lib/rotaData";
 
@@ -248,5 +249,31 @@ const baselineAug = calculateMonthPay(
 );
 assert.equal(overridden.scheduledDays, baselineAug.scheduledDays - 1);
 assert.ok(overridden.paidHours < baselineAug.paidHours);
+
+const fourAfters = CYCLE_PRESETS.find((p) => p.id === "4-4-afters");
+assert.ok(fourAfters);
+const aftersPay = calculatePay(
+  {
+    ...baseData,
+    extraWork: [],
+    settings: {
+      ...DEFAULT_SETTINGS,
+      hourlyRate: 10,
+      nightPremium: 1,
+      workStartDate: "2026-03-02",
+      rotaSource: "cycle",
+      cycle: { anchorDate: "2026-03-02", sequence: [...fourAfters.sequence] },
+      attendanceBonusEnabled: false,
+      attendanceBonusAmount: 0,
+    },
+  },
+  new Date(2026, 2, 2),
+  new Date(2026, 2, 9),
+);
+assert.equal(aftersPay.scheduledDays, 0);
+assert.equal(aftersPay.scheduledAfters, 4);
+assert.equal(aftersPay.scheduledNights, 0);
+assert.equal(aftersPay.nightPremiumPay, 0);
+assert.equal(aftersPay.paidHours, 4 * 11.5);
 
 console.log("pay tests passed");

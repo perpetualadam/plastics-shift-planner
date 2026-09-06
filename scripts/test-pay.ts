@@ -3,6 +3,7 @@ import {
   calculateMonthPay,
   calculatePay,
   comparePeriodPay,
+  estimatedAnnual,
   money,
   paidHoursFromBreak,
   paidHoursPerShift,
@@ -17,7 +18,7 @@ import {
   type AppData,
 } from "../src/lib/storage";
 import { CYCLE_PRESETS } from "../src/lib/shiftConfig";
-import { getShiftForDate } from "../src/lib/rota";
+import { countWorkDaysInRange, getShiftForDate } from "../src/lib/rota";
 import { ROTA_BY_DATE } from "../src/lib/rotaData";
 
 const baseData: AppData = {
@@ -275,5 +276,66 @@ assert.equal(aftersPay.scheduledAfters, 4);
 assert.equal(aftersPay.scheduledNights, 0);
 assert.equal(aftersPay.nightPremiumPay, 0);
 assert.equal(aftersPay.paidHours, 4 * 11.5);
+
+function cycleData(presetId: string, start = "2026-03-02"): AppData {
+  const preset = CYCLE_PRESETS.find((p) => p.id === presetId);
+  assert.ok(preset, presetId);
+  return {
+    ...baseData,
+    extraWork: [],
+    settings: {
+      ...DEFAULT_SETTINGS,
+      hourlyRate: 10,
+      nightPremium: 1,
+      workStartDate: start,
+      rotaSource: "cycle",
+      cycle: { anchorDate: start, sequence: [...preset.sequence] },
+      attendanceBonusEnabled: false,
+      attendanceBonusAmount: 0,
+    },
+  };
+}
+
+// Est. annual must include afters the same way monthly pay does
+const aftersAnnualData = cycleData("4-4-afters");
+const aftersFrom = new Date(2026, 2, 2);
+const aftersTo = new Date(2026, 11, 31);
+const aftersCounts = countWorkDaysInRange(
+  aftersFrom,
+  aftersTo,
+  {},
+  aftersAnnualData.settings,
+);
+assert.equal(aftersCounts.days, 0);
+assert.equal(aftersCounts.nights, 0);
+assert.ok(aftersCounts.afters > 0);
+assert.equal(estimatedAnnual(aftersAnnualData), aftersCounts.afters * 11.5 * 10);
+
+const continentalAnnualData = cycleData("continental");
+const continentalCounts = countWorkDaysInRange(
+  aftersFrom,
+  aftersTo,
+  {},
+  continentalAnnualData.settings,
+);
+assert.ok(continentalCounts.afters > 0);
+assert.equal(
+  estimatedAnnual(continentalAnnualData),
+  (continentalCounts.days + continentalCounts.afters + continentalCounts.nights) * 11.5 * 10 +
+    continentalCounts.nights * 11.5 * 1,
+);
+const continentalMonth = calculatePay(
+  continentalAnnualData,
+  new Date(2026, 2, 1),
+  new Date(2026, 2, 31),
+);
+assert.ok(continentalMonth.scheduledAfters > 0);
+assert.equal(
+  continentalMonth.paidHours,
+  (continentalMonth.scheduledDays +
+    continentalMonth.scheduledAfters +
+    continentalMonth.scheduledNights) *
+    11.5,
+);
 
 console.log("pay tests passed");

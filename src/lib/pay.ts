@@ -442,7 +442,7 @@ export function estimatedAnnual(data: AppData): number {
       : yearEnd;
 
   const counts = countWorkDaysInRange(from, to, overrides, settings);
-  const workDays = counts.days + counts.nights;
+  const workDays = counts.days + counts.afters + counts.nights;
   const hoursPer = paidHoursPerShift(settings);
   const extraPaid = (data.extraWork ?? []).reduce((s, e) => s + extraWorkPaidHours(e), 0);
   const base = (workDays * hoursPer + extraPaid) * settings.hourlyRate;
